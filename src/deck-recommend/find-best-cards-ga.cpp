@@ -1,6 +1,7 @@
 #include "deck-recommend/base-deck-recommend.h"
 #include <any>
 #include <algorithm>
+#include <memory_resource>
 
 
 struct Individual {
@@ -141,14 +142,17 @@ void BaseDeckRecommend::findBestCardsGA(
     }
 
     std::vector<const CardDetail*> evaluationDeck(member);
+    std::pmr::unsynchronized_pool_resource fitnessCachePool;
+    std::pmr::unordered_map<uint64_t, double> fitnessCache{&fitnessCachePool};
+    fitnessCache.reserve(cfg.gaPopSize);
 
     // 计算个体的分数并更新答案
     auto updateIndividualScore = [&](Individual& individual) {
         // 检查是否已经计算过这个组合
         auto deckHash = individual.calcDeckHash();
         double targetValue = 0.0;
-        auto cached = gaInfo.deckTargetValueMap.find(deckHash);
-        if (cached != gaInfo.deckTargetValueMap.end()) {
+        auto cached = fitnessCache.find(deckHash);
+        if (cached != fitnessCache.end()) {
             targetValue = cached->second;
         } else {
             // 计算当前综合力
@@ -165,7 +169,7 @@ void BaseDeckRecommend::findBestCardsGA(
                         honorBonus, eventType, eventId, cfg, ret.bestCandidate.value()
                     ), limit);
                 }
-                gaInfo.deckTargetValueMap[deckHash] = targetValue;
+                fitnessCache[deckHash] = targetValue;
             } else {
                 // 目前只会由于最低实效限制导致无法组出卡组，这种情况适应度主要考虑实效
                 targetValue = -1e9 + ret.maxMultiLiveScoreUp;
@@ -364,7 +368,8 @@ void BaseDeckRecommend::findBestCardsGA(
     // 迭代
     std::vector<Individual> newPopulation{};
     newPopulation.reserve(cfg.gaPopSize);
-    std::unordered_set<uint64_t> deckHashSet{};
+    std::pmr::unsynchronized_pool_resource deckHashPool;
+    std::pmr::unordered_set<uint64_t> deckHashSet{&deckHashPool};
     deckHashSet.reserve(cfg.gaPopSize);
     while (true) {
         std::sort(population.begin(), population.end(), std::greater<Individual>());
