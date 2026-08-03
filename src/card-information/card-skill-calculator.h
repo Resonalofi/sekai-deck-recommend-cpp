@@ -80,7 +80,7 @@ public:
      * @param userCard 用户卡牌
      * @param card 卡牌
      */
-    Skill getSkill(
+    const Skill& getSkill(
         const UserCard& userCard,
         const Card& card,
         bool afterTraining

@@ -12,17 +12,18 @@ std::optional<CardDetail> CardCalculator::getCardDetail(
     std::optional<double> scoreUpLimit
 )
 {
-    auto& cards = this->dataProvider.masterData->cards;
+    const auto& cards = this->dataProvider.masterData->cards;
 
-    Card card{};
+    const Card* cardPtr = nullptr;
     try {
-        card = findOrThrow(cards, [&](const auto &it) { 
+        cardPtr = &findOrThrow(cards, [&](const auto &it) {
             return it.id == userCard.cardId; 
         });
     } catch (const ElementNoFoundError& e) {
         std::cerr << "[warning] card id " << userCard.cardId << " appears in user data but not in master data." << std::endl;
         return std::nullopt;
     }
+    const auto& card = *cardPtr;
 
     CardConfig cfg{};
     // 单独卡配置覆盖稀有度卡配置
@@ -100,6 +101,7 @@ std::vector<CardDetail> CardCalculator::batchGetCardDetail(
 )
 {
     std::vector<CardDetail> ret{};
+    ret.reserve(userCards.size());
     auto areaItemLevels0 = areaItemLevels.empty() ? this->areaItemService.getAreaItemLevels() : areaItemLevels;
     // 自定义世界专项加成
     auto userCanvasBonusCards = this->mysekaiService.getMysekaiCanvasBonusCards();
@@ -112,7 +114,7 @@ std::vector<CardDetail> CardCalculator::batchGetCardDetail(
             userGateBonuses, scoreUpLimit
         );
         if (cardDetail.has_value()) {
-            ret.push_back(cardDetail.value());
+            ret.push_back(std::move(cardDetail.value()));
         }
     }
     return ret;
