@@ -1,5 +1,8 @@
 #include "live-score/live-calculator.h"
 
+#include <algorithm>
+#include <array>
+
 
 MusicMeta LiveCalculator::getMusicMeta(int musicId, int musicDif)
 {
@@ -224,6 +227,68 @@ int LiveCalculator::getLiveScoreByDeck(
     std::optional<int> multiTeammatePower
 )
 {
+    if (Enums::LiveType::isMulti(liveType) && deckDetail.cards.size() == 5) {
+        auto selfSkill = this->getMultiLiveSkill(deckDetail);
+        const double otherScoreUp = multiTeammateScoreUp.value_or(selfSkill.scoreUp);
+        std::array<double, 6> skills = {
+            selfSkill.scoreUp,
+            otherScoreUp,
+            otherScoreUp,
+            otherScoreUp,
+            otherScoreUp,
+            selfSkill.scoreUp,
+        };
+
+        bool skillSorted = false;
+        if (liveSkillOrder == LiveSkillOrder::specific) {
+            if (!specificSkillOrder.has_value())
+                throw std::runtime_error("specificSkillOrder is required for specific LiveSkillOrder");
+            if (specificSkillOrder->size() != 5)
+                throw std::runtime_error("specificSkillOrder size does not match skills size");
+
+            auto originalSkills = skills;
+            for (size_t i = 0; i < 5; ++i) {
+                auto index = specificSkillOrder->at(i);
+                if (index < 0 || index >= 6)
+                    throw std::runtime_error("specificSkillOrder index out of range: " + std::to_string(index));
+                skills[i] = originalSkills[index];
+            }
+            skills[5] = originalSkills[5];
+        }
+        else if (liveSkillOrder == LiveSkillOrder::best) {
+            std::sort(skills.begin(), skills.begin() + 5);
+            skillSorted = true;
+        }
+        else if (liveSkillOrder == LiveSkillOrder::worst) {
+            std::sort(skills.begin(), skills.begin() + 5, std::greater<>());
+            skillSorted = true;
+        }
+        else if (liveSkillOrder == LiveSkillOrder::average) {
+            double avgScoreUp = 0;
+            for (size_t i = 0; i < 5; ++i)
+                avgScoreUp += skills[i];
+            avgScoreUp /= 5;
+            for (size_t i = 0; i < 5; ++i)
+                skills[i] = avgScoreUp;
+        }
+
+        const auto& sourceSkillScores = musicMeta.skill_score_multi;
+        std::array<double, 6> skillScores{};
+        std::copy_n(sourceSkillScores.begin(), 6, skillScores.begin());
+        if (skillSorted)
+            std::sort(skillScores.begin(), skillScores.begin() + 5);
+
+        double rate = musicMeta.base_score + musicMeta.fever_score * 0.5;
+        for (size_t i = 0; i < 6; ++i)
+            rate += skills[i] * skillScores[i] / 100.;
+
+        double powerSum = 5 * deckDetail.power.total;
+        if (multiTeammatePower.has_value())
+            powerSum = deckDetail.power.total + multiTeammatePower.value() * 4;
+        double activeBonus = liveType == Enums::LiveType::isMulti(liveType) ? 5 * 0.015 * powerSum : 0;
+        return int(rate * deckDetail.power.total * 4 + activeBonus);
+    }
+
     return this->getLiveDetailByDeck(
         deckDetail, musicMeta, liveType, 
         liveSkillOrder, specificSkillOrder, 
