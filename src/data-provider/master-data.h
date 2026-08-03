@@ -12,6 +12,7 @@ class MasterData {
 private:
 
     void addFakeEvent(int eventType);
+    void finishLoad();
 
 public:
     std::string baseDir;

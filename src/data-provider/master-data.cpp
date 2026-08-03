@@ -62,21 +62,6 @@ void loadMasterDataJsonFromFile(std::map<std::string, json>& jsons, const std::s
     }
 }
 
-void loadMasterDataJsonFromStrings(std::map<std::string, json>& jsons, std::map<std::string, std::string>& data, const std::string& key) {
-    try {
-        if (!data.count(key)) {
-            jsons.erase(key);
-            return;
-        }
-        json j = json::parse(data.at(key));
-        jsons[key] = j;
-    }
-    catch (const std::exception& e) {
-        throw std::runtime_error("Failed to load master data from string: " + key + ", error: " + e.what());
-    }
-}
-
-
 void addFinalChapterEventIfNeeded(MasterData& md) {
     bool hasFinalChapter = false;
     for (const auto& e : md.events) {
@@ -144,6 +129,32 @@ std::vector<T> loadMasterData(std::map<std::string, json>& jsons, const std::str
     return T::fromJsonList(jsons.at(key));
 }
 
+template <typename T>
+std::vector<T> loadMasterDataFromString(
+    std::map<std::string, std::string>& data,
+    const std::string& key,
+    bool required = true
+) {
+    auto it = data.find(key);
+    if (it == data.end()) {
+        if (required)
+            throw std::runtime_error("master data key not found: " + key);
+        std::cerr << "[sekai-deck-recommend-cpp] warning: master data key not found: " + key << std::endl;
+        return {};
+    }
+
+    json parsed;
+    try {
+        parsed = json::parse(it->second);
+    }
+    catch (const std::exception& e) {
+        throw std::runtime_error("Failed to load master data from string: " + key + ", error: " + e.what());
+    }
+    data.erase(it);
+    auto result = T::fromJsonList(parsed);
+    return result;
+}
+
 void MasterData::loadFromJsons(std::map<std::string, json>& jsons) {
     this->areaItemLevels = loadMasterData<AreaItemLevel>(jsons, "areaItemLevels");
     this->areaItems = loadMasterData<AreaItem>(jsons, "areaItems");
@@ -177,6 +188,10 @@ void MasterData::loadFromJsons(std::map<std::string, json>& jsons) {
     this->mysekaiGates = loadMasterData<MysekaiGate>(jsons, "mysekaiGates", false);
     this->mysekaiGateLevels = loadMasterData<MysekaiGateLevel>(jsons, "mysekaiGateLevels", false);
 
+    finishLoad();
+}
+
+void MasterData::finishLoad() {
     std::map<std::string, json> tmp{};
     loadMasterDataJsonFromFile(tmp, getStaticDataDir(), "worldBloomSupportDeckBonusesWL1");
     loadMasterDataJsonFromFile(tmp, getStaticDataDir(), "worldBloomSupportDeckBonusesWL2");
@@ -201,12 +216,49 @@ void MasterData::loadFromFiles(const std::string& baseDir) {
 
 void MasterData::loadFromStrings(std::map<std::string, std::string>& data) {
     this->baseDir.clear();
-    std::map<std::string, json> jsons;
-    for (const auto& key : requiredMasterDataKeys) 
-        loadMasterDataJsonFromStrings(jsons, data, key);
-    for (const auto& key : notRequiredMasterDataKeys)
-        loadMasterDataJsonFromStrings(jsons, data, key);
-    loadFromJsons(jsons);
+    this->areaItemLevels = loadMasterDataFromString<AreaItemLevel>(data, "areaItemLevels");
+    this->areaItems = loadMasterDataFromString<AreaItem>(data, "areaItems");
+    this->areas = loadMasterDataFromString<Area>(data, "areas");
+    this->cardEpisodes = loadMasterDataFromString<CardEpisode>(data, "cardEpisodes");
+    this->cards = loadMasterDataFromString<Card>(data, "cards");
+    this->cardRarities = loadMasterDataFromString<CardRarity>(data, "cardRarities");
+    this->characterRanks = loadMasterDataFromString<CharacterRank>(data, "characterRanks");
+    this->eventCards = loadMasterDataFromString<EventCard>(data, "eventCards");
+    this->eventDeckBonuses = loadMasterDataFromString<EventDeckBonus>(data, "eventDeckBonuses");
+    this->eventExchangeSummaries = loadMasterDataFromString<EventExchangeSummary>(data, "eventExchangeSummaries");
+    this->events = loadMasterDataFromString<Event>(data, "events");
+    this->eventItems = loadMasterDataFromString<EventItem>(data, "eventItems");
+    this->eventRarityBonusRates = loadMasterDataFromString<EventRarityBonusRate>(data, "eventRarityBonusRates");
+    this->gameCharacters = loadMasterDataFromString<GameCharacter>(data, "gameCharacters");
+    this->gameCharacterUnits = loadMasterDataFromString<GameCharacterUnit>(data, "gameCharacterUnits");
+    this->honors = loadMasterDataFromString<Honor>(data, "honors");
+    this->masterLessons = loadMasterDataFromString<MasterLesson>(data, "masterLessons");
+    this->musicDifficulties = loadMasterDataFromString<MusicDifficulty>(data, "musicDifficulties");
+    this->musics = loadMasterDataFromString<Music>(data, "musics");
+    this->musicVocals = loadMasterDataFromString<MusicVocal>(data, "musicVocals");
+    this->shopItems = loadMasterDataFromString<ShopItem>(data, "shopItems");
+    this->skills = loadMasterDataFromString<Skill>(data, "skills");
+    this->worldBloomDifferentAttributeBonuses = loadMasterDataFromString<WorldBloomDifferentAttributeBonus>(data, "worldBloomDifferentAttributeBonuses");
+    this->worldBlooms = loadMasterDataFromString<WorldBloom>(data, "worldBlooms");
+    auto supportDeckBonuses = data.find("worldBloomSupportDeckBonuses");
+    if (supportDeckBonuses == data.end())
+        throw std::runtime_error("master data key not found: worldBloomSupportDeckBonuses");
+    try {
+        [[maybe_unused]] auto parsed = json::parse(supportDeckBonuses->second);
+    }
+    catch (const std::exception& e) {
+        throw std::runtime_error("Failed to load master data from string: worldBloomSupportDeckBonuses, error: " + std::string(e.what()));
+    }
+    data.erase(supportDeckBonuses);
+
+    this->worldBloomSupportDeckUnitEventLimitedBonuses = loadMasterDataFromString<WorldBloomSupportDeckUnitEventLimitedBonus>(data, "worldBloomSupportDeckUnitEventLimitedBonuses", false);
+    this->cardMysekaiCanvasBonuses = loadMasterDataFromString<CardMysekaiCanvasBonus>(data, "cardMysekaiCanvasBonuses", false);
+    this->mysekaiFixtureGameCharacterGroups = loadMasterDataFromString<MysekaiFixtureGameCharacterGroup>(data, "mysekaiFixtureGameCharacterGroups", false);
+    this->mysekaiFixtureGameCharacterGroupPerformanceBonuses = loadMasterDataFromString<MysekaiFixtureGameCharacterGroupPerformanceBonus>(data, "mysekaiFixtureGameCharacterGroupPerformanceBonuses", false);
+    this->mysekaiGates = loadMasterDataFromString<MysekaiGate>(data, "mysekaiGates", false);
+    this->mysekaiGateLevels = loadMasterDataFromString<MysekaiGateLevel>(data, "mysekaiGateLevels", false);
+
+    finishLoad();
 }
 
 
@@ -339,5 +391,3 @@ int MasterData::getWorldBloomEventTurn(int eventId) const
     else 
         return eventId <= 140 ? 1 : 2;  // 140之前为第一轮
 }
-
-
