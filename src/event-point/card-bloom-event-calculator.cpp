@@ -4,7 +4,7 @@ std::optional<double> CardBloomEventCalculator::getCardSupportDeckBonus(const Us
 {
     if (specialCharacterId <= 0) return std::nullopt;
     auto& cards = dataProvider.masterData->cards;
-    auto card = findOrThrow(cards, [&](const Card& it) { 
+    const auto& card = findOrThrow(cards, [&](const Card& it) {
         return it.id == userCard.cardId; 
     }, [&]() { return "Support Deck Card not found for cardId=" + std::to_string(userCard.cardId); });
 
@@ -23,7 +23,7 @@ std::optional<double> CardBloomEventCalculator::getCardSupportDeckBonus(const Us
         ? dataProvider.masterData->worldBloomSupportDeckBonusesWL1
         : dataProvider.masterData->worldBloomSupportDeckBonusesWL2
     );
-    auto bonus = findOrThrow(worldBloomSupportDeckBonuses, [&](const WorldBloomSupportDeckBonus& it) { 
+    auto& bonus = findOrThrow(worldBloomSupportDeckBonuses, [&](const WorldBloomSupportDeckBonus& it) {
             return it.cardRarityType == card.cardRarityType; 
         }, [&]() { return "World Bloom Support Deck Bonus not found for cardRarityType=" + std::to_string(card.cardRarityType); }
     );

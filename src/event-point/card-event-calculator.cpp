@@ -30,7 +30,7 @@ double CardEventCalculator::getEventDeckBonus(int eventId, const Card &card)
 CardEventBonusInfo CardEventCalculator::getCardEventBonus(const UserCard &userCard, int eventId)
 {
     auto& cards = this->dataProvider.masterData->cards;
-    auto card = findOrThrow(cards, [&](const Card& it) { 
+    const auto& card = findOrThrow(cards, [&](const Card& it) {
         return it.id == userCard.cardId; 
     }, [&]() { return "Card not found for cardId=" + std::to_string(userCard.cardId); });
     auto& eventCards = this->dataProvider.masterData->eventCards;
