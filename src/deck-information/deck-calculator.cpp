@@ -14,15 +14,12 @@ DeckBonusInfo DeckCalculator::getDeckBonus(
     // 如果没有预处理好活动加成，则返回空
     for (const auto &card : deckCards) 
         if (!card->maxEventBonus.has_value()) {
-            ret.cardBonus = std::vector<double>(deckCards.size(), 0.0);
             return ret;
         }
 
     // 正常加成
-    ret.cardBonus.reserve(deckCards.size());
-    for (const auto &card : deckCards) {
-        ret.cardBonus.push_back(card->maxEventBonus.value());
-    }
+    for (size_t i = 0; i < deckCards.size(); ++i)
+        ret.cardBonus[i] = deckCards[i]->maxEventBonus.value();
 
     // 终章机制
     if (eventId.has_value() && eventId.value() == finalChapterEventId) {
@@ -60,7 +57,11 @@ DeckBonusInfo DeckCalculator::getDeckBonus(
         ret.diffAttrBonus = it.bonusRate;
     }
 
-    ret.totalBonus = ret.diffAttrBonus + std::accumulate(ret.cardBonus.begin(), ret.cardBonus.end(), 0.0);
+    ret.totalBonus = ret.diffAttrBonus + std::accumulate(
+        ret.cardBonus.begin(),
+        ret.cardBonus.begin() + deckCards.size(),
+        0.0
+    );
     return ret;
 }
 
@@ -175,9 +176,6 @@ void DeckCalculator::forEachDeckState(
     for (int i = 0; i < 16; ++i) 
         unit_num += bool(powerCalculation.unitCounts[i]);
 
-    const auto& cardPower = powerCalculation.cards;
-    const auto& power = powerCalculation.total;
-
     // 计算当前卡组每个卡牌的花前/花后固定技能效果（进Live之前）
     std::array<std::array<DeckCardSkillDetail, 2>, 5> prepareSkills{};
     int doubleSkillMask = 0;
@@ -236,9 +234,9 @@ void DeckCalculator::forEachDeckState(
     // 枚举技能状态，计算当前卡组的实际技能效果（包括选择花前/花后技能），并归纳卡牌在队伍中的详情信息
     std::array<DeckCardSkillDetail, 5> skills{};
     std::array<int, 5> order{};
-    std::vector<double> memberSkillMaxs{};
-    std::vector<std::pair<int, int>> scoreUps{};
-    scoreUps.reserve(1 << needEnumerateCount);
+    std::array<double, 4> memberSkillMaxs{};
+    std::array<std::pair<int, int>, 32> scoreUps{};
+    int scoreUpCount = 0;
     for (int mask = needEnumerateStatusMask; mask >= 0; mask = mask ? (mask - 1) & needEnumerateStatusMask : -1) {
         // 根据mask枚举花前/花后技能状态，计算实际技能
         for (int i = 0; i < card_num; ++i) {
@@ -256,21 +254,21 @@ void DeckCalculator::forEachDeckState(
             // 吸分
             if (s.hasScoreUpReference) {
                 s.scoreUp -= s.scoreUpReferenceMax; // 从max回到还没吸的基础值
-                memberSkillMaxs.clear();
+                int memberSkillCount = 0;
                 // 收集其他成员的技能最大值
                 for (int j = 0; j < card_num; ++j) if (i != j) {
                     double m = skills[j].scoreUpToReference;
                     m = std::min(std::floor(m * s.scoreUpReferenceRate / 100.), s.scoreUpReferenceMax);
-                    memberSkillMaxs.push_back(m);
+                    memberSkillMaxs[memberSkillCount++] = m;
                 }
                 // 不同选择策略
                 double chosenSkillMax = 0;
                 if (skillReferenceChooseStrategy == SkillReferenceChooseStrategy::Max) 
-                    chosenSkillMax = *std::max_element(memberSkillMaxs.begin(), memberSkillMaxs.end());
+                    chosenSkillMax = *std::max_element(memberSkillMaxs.begin(), memberSkillMaxs.begin() + memberSkillCount);
                 else if (skillReferenceChooseStrategy == SkillReferenceChooseStrategy::Min)
-                    chosenSkillMax = *std::min_element(memberSkillMaxs.begin(), memberSkillMaxs.end());
+                    chosenSkillMax = *std::min_element(memberSkillMaxs.begin(), memberSkillMaxs.begin() + memberSkillCount);
                 else if (skillReferenceChooseStrategy == SkillReferenceChooseStrategy::Average)
-                    chosenSkillMax = std::accumulate(memberSkillMaxs.begin(), memberSkillMaxs.end(), 0.0) / memberSkillMaxs.size();
+                    chosenSkillMax = std::accumulate(memberSkillMaxs.begin(), memberSkillMaxs.begin() + memberSkillCount, 0.0) / memberSkillCount;
                 s.scoreUp += chosenSkillMax; 
             } 
         }
@@ -297,14 +295,15 @@ void DeckCalculator::forEachDeckState(
             else otherScoreUpSum += skills[i].scoreUp;
         }
         bool skip = false;
-        for (const auto& scoreUp : scoreUps) {
+        for (int i = 0; i < scoreUpCount; ++i) {
+            const auto& scoreUp = scoreUps[i];
             if (scoreUp.first >= leaderScoreUp && scoreUp.second >= otherScoreUpSum) {
                 skip = true;
                 break;
             }
         }
         if (skip) continue;
-        scoreUps.push_back({ leaderScoreUp, otherScoreUpSum });
+        scoreUps[scoreUpCount++] = { leaderScoreUp, otherScoreUpSum };
 
         // 计算多人live的技能实效
         double multiLiveScoreUp = 0;

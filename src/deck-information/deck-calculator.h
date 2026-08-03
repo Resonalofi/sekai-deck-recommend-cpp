@@ -13,7 +13,7 @@ enum class SkillReferenceChooseStrategy {
 };
 
 struct DeckBonusInfo {
-    std::vector<double> cardBonus{};
+    std::array<double, 5> cardBonus{};
     double diffAttrBonus = 0.;
     double totalBonus = 0.;
 };
