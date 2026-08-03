@@ -1,6 +1,6 @@
 #include "card-information/card-power-calculator.h"
 
-CardDetailMap<DeckCardPowerDetail> CardPowerCalculator::getCardPower(
+CardPowerDetailMap CardPowerCalculator::getCardPower(
     const UserCard &userCard, 
     const Card &card, 
     const std::vector<int> &cardUnits, 
@@ -10,7 +10,7 @@ CardDetailMap<DeckCardPowerDetail> CardPowerCalculator::getCardPower(
     std::optional<int> fixtureBonusLimit
 )
 {
-    auto ret = CardDetailMap<DeckCardPowerDetail>();
+    auto ret = CardPowerDetailMap();
     BasePower basePower = getBasePower(userCard, card, hasCanvasBonus);
     int characterBonus = getCharacterBonusPower(basePower, card.characterId);
     int fixtureBonus = getFixtureBonusPower(basePower, card.characterId, fixtureBonusLimit);

@@ -41,6 +41,9 @@ struct DeckCardSkillDetail {
     double scoreUpToReference = 0;
 };
 
+// Two skill variants can provide ten unit states plus any/ref/diff states.
+using CardSkillDetailMap = CardDetailMap<DeckCardSkillDetail, 15>;
+
 class CardSkillCalculator {
 
     DataProvider dataProvider;
@@ -55,7 +58,7 @@ public:
      * @param card 卡牌
      * @param scoreUpLimit 终章应用的加分上限
      */
-    CardDetailMap<DeckCardSkillDetail> getCardSkill(
+    CardSkillDetailMap getCardSkill(
         const UserCard& userCard,
         const Card& card,
         std::optional<double> scoreUpLimit = std::nullopt

@@ -1,7 +1,7 @@
 #include "card-information/card-skill-calculator.h"
 
 
-CardDetailMap<DeckCardSkillDetail> CardSkillCalculator::getCardSkill(
+CardSkillDetailMap CardSkillCalculator::getCardSkill(
     const UserCard &userCard, 
     const Card &card, 
     std::optional<double> scoreUpLimit
@@ -9,7 +9,7 @@ CardDetailMap<DeckCardSkillDetail> CardSkillCalculator::getCardSkill(
 {
     double limit = scoreUpLimit.value_or(std::numeric_limits<double>::max());
 
-    CardDetailMap<DeckCardSkillDetail> skillMap{};
+    CardSkillDetailMap skillMap{};
     std::vector<SkillDetail> details = { getSkillDetail(userCard, card, false) };
     if (card.specialTrainingSkillId != 0) 
         details.push_back(getSkillDetail(userCard, card, true));
