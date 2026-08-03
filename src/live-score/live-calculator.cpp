@@ -229,7 +229,9 @@ int LiveCalculator::getLiveScoreByDeck(
 {
     if (Enums::LiveType::isMulti(liveType) && deckDetail.cards.size() == 5) {
         auto selfSkill = this->getMultiLiveSkill(deckDetail);
-        const double otherScoreUp = multiTeammateScoreUp.value_or(selfSkill.scoreUp);
+        const double otherScoreUp = multiTeammateScoreUp.has_value()
+            ? static_cast<double>(multiTeammateScoreUp.value())
+            : selfSkill.scoreUp;
         std::array<double, 6> skills = {
             selfSkill.scoreUp,
             otherScoreUp,
@@ -310,7 +312,9 @@ int LiveCalculator::getLiveScoreByDeck(
         double selfScoreUp = deckDetail.skillScoreUps[0];
         for (int i = 1; i < 5; ++i)
             selfScoreUp += deckDetail.skillScoreUps[i] / 5.;
-        const double otherScoreUp = multiTeammateScoreUp.value_or(selfScoreUp);
+        const double otherScoreUp = multiTeammateScoreUp.has_value()
+            ? static_cast<double>(multiTeammateScoreUp.value())
+            : selfScoreUp;
         std::array<double, 6> skills = {
             selfScoreUp,
             otherScoreUp,
@@ -375,7 +379,9 @@ int LiveCalculator::getLiveScoreByDeck(
 
     if (Enums::LiveType::isMulti(liveType)) {
         const double selfScoreUp = deckDetail.multiLiveScoreUp;
-        const double otherScoreUp = multiTeammateScoreUp.value_or(selfScoreUp);
+        const double otherScoreUp = multiTeammateScoreUp.has_value()
+            ? static_cast<double>(multiTeammateScoreUp.value())
+            : selfScoreUp;
         skills = {
             selfScoreUp,
             otherScoreUp,
