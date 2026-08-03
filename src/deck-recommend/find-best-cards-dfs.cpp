@@ -16,7 +16,7 @@ void BaseDeckRecommend::findBestCardsDFS(
     const DeckRecommendConfig& cfg,
     const std::vector<CardDetail> &cardDetails, 
     std::map<int, std::vector<SupportDeckCard>>& supportCards,
-    const std::function<Score(const DeckDetail &)> &scoreFunc, 
+    const std::function<Score(const DeckScoreDetail &)> &scoreFunc,
     RecommendCalcInfo& dfsInfo,
     int limit, 
     bool isChallengeLive, 
@@ -51,8 +51,12 @@ void BaseDeckRecommend::findBestCardsDFS(
             this->deckCalculator, deckCards, supportCards, scoreFunc, 
             honorBonus, eventType, eventId, liveType, cfg
         );
-        if (ret.bestDeck.has_value())
-            dfsInfo.update(ret.bestDeck.value(), limit);
+        if (ret.bestCandidate.has_value() && dfsInfo.wouldUpdate(ret.bestCandidate.value(), limit)) {
+            dfsInfo.update(materializeCandidate(
+                this->deckCalculator, deckCards, supportCards,
+                honorBonus, eventType, eventId, cfg, ret.bestCandidate.value()
+            ), limit);
+        }
         return;
     }
 

@@ -21,7 +21,7 @@ union Score {
         int mysekaiInternalPoint;
     };
 };
-using ScoreFunction = std::function<Score(const MusicMeta&, const DeckDetail&)>;
+using ScoreFunction = std::function<Score(const MusicMeta&, const DeckScoreDetail&)>;
 
 struct SortedSkillDetails {
     std::vector<DeckCardSkillDetail> details;
@@ -148,6 +148,16 @@ public:
     int getLiveScoreByDeck(
         const DeckDetail &deckDetail, 
         const MusicMeta &musicMeta, 
+        int liveType,
+        LiveSkillOrder liveSkillOrder,
+        std::optional<std::vector<int>> specificSkillOrder = std::nullopt,
+        std::optional<int> multiTeammateScoreUp = std::nullopt,
+        std::optional<int> multiTeammatePower = std::nullopt
+    );
+
+    int getLiveScoreByDeck(
+        const DeckScoreDetail& deckDetail,
+        const MusicMeta& musicMeta,
         int liveType,
         LiveSkillOrder liveSkillOrder,
         std::optional<std::vector<int>> specificSkillOrder = std::nullopt,

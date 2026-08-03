@@ -29,6 +29,21 @@ struct DeckPowerCalculation {
     std::array<int, 16> unitCounts{};
 };
 
+struct DeckStateView {
+    const std::vector<const CardDetail*>& cardDetails;
+    const DeckBonusInfo& eventBonus;
+    double supportDeckBonus;
+    const DeckPowerCalculation& power;
+    const std::array<DeckCardSkillDetail, 5>& skills;
+    const std::array<int, 5>& order;
+    int cardCount;
+    int doubleSkillMask;
+    int statusMask;
+    double multiLiveScoreUp;
+};
+
+using DeckStateConsumer = std::function<void(const DeckStateView&)>;
+
 class DeckCalculator {
     DataProvider dataProvider;
     CardCalculator cardCalculator;
@@ -80,6 +95,18 @@ public:
         int honorBonus = 0
     );
 
+    void forEachDeckState(
+        const std::vector<const CardDetail*>& cardDetails,
+        std::map<int, std::vector<SupportDeckCard>>& supportCards,
+        const DeckStateConsumer& consume,
+        int honorBonus = 0,
+        std::optional<int> eventType = std::nullopt,
+        std::optional<int> eventId = std::nullopt,
+        SkillReferenceChooseStrategy skillReferenceChooseStrategy = SkillReferenceChooseStrategy::Average,
+        bool keepAfterTrainingState = false,
+        bool bestSkillAsLeader = true
+    );
+
     /**
      * 计算给定的多张卡牌综合力、技能
      * @param cardDetails 处理好的卡牌详情（数组长度1-5，兼容挑战Live）
@@ -99,7 +126,8 @@ public:
         std::optional<int> eventId = std::nullopt,
         SkillReferenceChooseStrategy skillReferenceChooseStrategy = SkillReferenceChooseStrategy::Average,
         bool keepAfterTrainingState = false,
-        bool bestSkillAsLeader = true
+        bool bestSkillAsLeader = true,
+        std::optional<int> selectedStatusMask = std::nullopt
     );
 };
    

@@ -21,6 +21,7 @@ public:
      * @param deckDetail 卡组
      */
     Score getDeckMysekaiEventPoint(const DeckDetail& deckDetail);
+    Score getDeckMysekaiEventPoint(const DeckScoreDetail& deckDetail);
 
     /**
      * 获取计算烤森活动点数的函数

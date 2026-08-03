@@ -39,6 +39,24 @@ void RecommendCalcInfo::update(const RecommendDeck &deck, int limit)
     }
 }
 
+bool RecommendCalcInfo::wouldUpdate(const RecommendCandidate& candidate, int limit) const
+{
+    if (int(deckQueue.size()) >= limit) {
+        const auto& worst = deckQueue.top();
+        if (worst.targetValue > candidate.targetValue ||
+            (worst.targetValue == candidate.targetValue && worst.cards[0].cardId < candidate.leaderCardId)) {
+            return false;
+        }
+    }
+
+    uint64_t hash = 0;
+    constexpr uint64_t base = 10007;
+    hash = hash * base + candidate.resultScore;
+    hash = hash * base + candidate.power;
+    hash = hash * base + candidate.leaderCardId;
+    return !deckQueueHashSet.count(hash);
+}
+
 bool RecommendCalcInfo::isTimeout()
 {
     if (++timeout_check_count % 256 != 0) 

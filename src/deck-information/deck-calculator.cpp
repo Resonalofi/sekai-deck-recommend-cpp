@@ -138,10 +138,11 @@ DeckPowerCalculation DeckCalculator::getDeckPowerByCards(
 }
 
 
-std::vector<DeckDetail> DeckCalculator::getDeckDetailByCards(
-    const std::vector<const CardDetail*> &cardDetails, 
+void DeckCalculator::forEachDeckState(
+    const std::vector<const CardDetail*> &cardDetails,
     std::map<int, std::vector<SupportDeckCard>>& supportCards,
-    int honorBonus, 
+    const DeckStateConsumer& consume,
+    int honorBonus,
     std::optional<int> eventType,
     std::optional<int> eventId,
     SkillReferenceChooseStrategy skillReferenceChooseStrategy,
@@ -238,7 +239,6 @@ std::vector<DeckDetail> DeckCalculator::getDeckDetailByCards(
     std::vector<double> memberSkillMaxs{};
     std::vector<std::pair<int, int>> scoreUps{};
     scoreUps.reserve(1 << needEnumerateCount);
-    std::vector<DeckDetail> ret{};
     for (int mask = needEnumerateStatusMask; mask >= 0; mask = mask ? (mask - 1) & needEnumerateStatusMask : -1) {
         // 根据mask枚举花前/花后技能状态，计算实际技能
         for (int i = 0; i < card_num; ++i) {
@@ -306,49 +306,93 @@ std::vector<DeckDetail> DeckCalculator::getDeckDetailByCards(
         if (skip) continue;
         scoreUps.push_back({ leaderScoreUp, otherScoreUpSum });
 
-        // 归纳卡牌在队伍中的详情信息
-        std::vector<DeckCardDetail> cards{};
-        cards.reserve(card_num);
-        for (auto i : order) {
-            auto& cardDetail = *cardDetails[i];
-
-            // 如果确实是双技能，根据技能调整卡面状态
-            int defaultImage = cardDetail.defaultImage;
-            if (doubleSkillMask & (1 << i)) {
-                defaultImage = skills[i].isAfterTraining ? Enums::DefaultImage::special_training : Enums::DefaultImage::original;
-            }
-
-            cards.push_back(DeckCardDetail{ 
-                cardDetail.cardId, 
-                cardDetail.level, 
-                cardDetail.skillLevel, 
-                cardDetail.masterRank, 
-                cardPower[i],
-                eventBonusInfo.cardBonus[i],
-                skills[i],
-                cardDetail.episode1Read,
-                cardDetail.episode2Read,
-                cardDetail.afterTraining,
-                defaultImage,
-                cardDetail.hasCanvasBonus,
-            });
-        }
-
         // 计算多人live的技能实效
         double multiLiveScoreUp = 0;
         multiLiveScoreUp += skills[order[0]].scoreUp;
         for (int i = 1; i < card_num; ++i) 
             multiLiveScoreUp += skills[order[i]].scoreUp * 0.2;
 
-        ret.push_back(DeckDetail{ 
-            .power = power, 
-            .eventBonus = eventBonusInfo.totalBonus,
-            .supportDeckBonus = supportDeckBonus.bonus,
-            .supportDeckCards = std::nullopt, // supportDeckBonus.cards
-            .cards = std::move(cards),
-            .multiLiveScoreUp = multiLiveScoreUp
+        consume(DeckStateView{
+            cardDetails,
+            eventBonusInfo,
+            supportDeckBonus.bonus,
+            powerCalculation,
+            skills,
+            order,
+            card_num,
+            doubleSkillMask,
+            mask,
+            multiLiveScoreUp,
         });
     }
+}
+
+
+std::vector<DeckDetail> DeckCalculator::getDeckDetailByCards(
+    const std::vector<const CardDetail*> &cardDetails,
+    std::map<int, std::vector<SupportDeckCard>>& supportCards,
+    int honorBonus,
+    std::optional<int> eventType,
+    std::optional<int> eventId,
+    SkillReferenceChooseStrategy skillReferenceChooseStrategy,
+    bool keepAfterTrainingState,
+    bool bestSkillAsLeader,
+    std::optional<int> selectedStatusMask
+)
+{
+    std::vector<DeckDetail> ret{};
+    forEachDeckState(
+        cardDetails,
+        supportCards,
+        [&](const DeckStateView& state) {
+            if (selectedStatusMask.has_value() && state.statusMask != selectedStatusMask.value())
+                return;
+
+            std::vector<DeckCardDetail> cards{};
+            cards.reserve(5);
+            for (int pos = 0; pos < 5; ++pos) {
+                int i = state.order[pos];
+                const auto& cardDetail = *state.cardDetails[i];
+
+                int defaultImage = cardDetail.defaultImage;
+                if (state.doubleSkillMask & (1 << i)) {
+                    defaultImage = state.skills[i].isAfterTraining
+                        ? Enums::DefaultImage::special_training
+                        : Enums::DefaultImage::original;
+                }
+
+                cards.push_back(DeckCardDetail{
+                    cardDetail.cardId,
+                    cardDetail.level,
+                    cardDetail.skillLevel,
+                    cardDetail.masterRank,
+                    state.power.cards[i],
+                    state.eventBonus.cardBonus[i],
+                    state.skills[i],
+                    cardDetail.episode1Read,
+                    cardDetail.episode2Read,
+                    cardDetail.afterTraining,
+                    defaultImage,
+                    cardDetail.hasCanvasBonus,
+                });
+            }
+
+            ret.push_back(DeckDetail{
+                .power = state.power.total,
+                .eventBonus = state.eventBonus.totalBonus,
+                .supportDeckBonus = state.supportDeckBonus,
+                .supportDeckCards = std::nullopt,
+                .cards = std::move(cards),
+                .multiLiveScoreUp = state.multiLiveScoreUp,
+            });
+        },
+        honorBonus,
+        eventType,
+        eventId,
+        skillReferenceChooseStrategy,
+        keepAfterTrainingState,
+        bestSkillAsLeader
+    );
 
     return ret;
 }

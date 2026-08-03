@@ -117,7 +117,7 @@ void BaseDeckRecommend::findBestCardsGA(
     Rng& rng,
     const std::vector<CardDetail> &cardDetails,     // 所有参与组队的卡牌
     std::map<int, std::vector<SupportDeckCard>>& supportCards,        // 全部卡牌（用于计算支援卡组加成）
-    const std::function<Score(const DeckDetail &)> &scoreFunc,    
+    const std::function<Score(const DeckScoreDetail &)> &scoreFunc,
     RecommendCalcInfo& gaInfo,
     int limit, 
     bool isChallengeLive, 
@@ -157,9 +157,14 @@ void BaseDeckRecommend::findBestCardsGA(
                 this->deckCalculator, evaluationDeck, supportCards, scoreFunc,
                 honorBonus, eventType, eventId, liveType, cfg
             );
-            if (ret.bestDeck.has_value()) {
-                targetValue = ret.bestDeck.value().targetValue;
-                gaInfo.update(ret.bestDeck.value(), limit);
+            if (ret.bestCandidate.has_value()) {
+                targetValue = ret.bestCandidate.value().targetValue;
+                if (gaInfo.wouldUpdate(ret.bestCandidate.value(), limit)) {
+                    gaInfo.update(materializeCandidate(
+                        this->deckCalculator, evaluationDeck, supportCards,
+                        honorBonus, eventType, eventId, cfg, ret.bestCandidate.value()
+                    ), limit);
+                }
                 gaInfo.deckTargetValueMap[deckHash] = targetValue;
             } else {
                 // 目前只会由于最低实效限制导致无法组出卡组，这种情况适应度主要考虑实效

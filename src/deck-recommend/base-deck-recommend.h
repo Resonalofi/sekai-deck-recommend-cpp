@@ -97,7 +97,7 @@ struct DeckRecommendConfig {
 
 
 struct BestPermutationResult {
-    std::optional<RecommendDeck> bestDeck = std::nullopt;
+    std::optional<RecommendCandidate> bestCandidate = std::nullopt;
     double maxTargetValue = 0.0;
     double maxMultiLiveScoreUp = 0.0;
 };
@@ -131,12 +131,23 @@ public:
         DeckCalculator& deckCalculator,
         const std::vector<const CardDetail*> &deckCards,
         std::map<int, std::vector<SupportDeckCard>>& supportCards,
-        const std::function<Score(const DeckDetail &)> &scoreFunc,
+        const std::function<Score(const DeckScoreDetail &)> &scoreFunc,
         int honorBonus,
         std::optional<int> eventType,
         std::optional<int> eventId,
         int liveType,
         const DeckRecommendConfig& config
+    ) const;
+
+    RecommendDeck materializeCandidate(
+        DeckCalculator& deckCalculator,
+        const std::vector<const CardDetail*>& deckCards,
+        std::map<int, std::vector<SupportDeckCard>>& supportCards,
+        int honorBonus,
+        std::optional<int> eventType,
+        std::optional<int> eventId,
+        const DeckRecommendConfig& config,
+        const RecommendCandidate& candidate
     ) const;
 
     /**
@@ -159,7 +170,7 @@ public:
         const DeckRecommendConfig& config,
         const std::vector<CardDetail>& cardDetails,
         std::map<int, std::vector<SupportDeckCard>>& supportCards,
-        const std::function<Score(const DeckDetail&)>& scoreFunc,
+        const std::function<Score(const DeckScoreDetail&)>& scoreFunc,
         RecommendCalcInfo& dfsInfo,
         int limit = 1,
         bool isChallengeLive = false,
@@ -190,7 +201,7 @@ public:
         Rng& rng,
         const std::vector<CardDetail>& cardDetails,
         std::map<int, std::vector<SupportDeckCard>>& supportCards,
-        const std::function<Score(const DeckDetail&)>& scoreFunc,
+        const std::function<Score(const DeckScoreDetail&)>& scoreFunc,
         RecommendCalcInfo& dfsInfo,
         int limit = 1,
         bool isChallengeLive = false,
@@ -221,7 +232,7 @@ public:
         Rng& rng,
         const std::vector<CardDetail>& cardDetails,
         std::map<int, std::vector<SupportDeckCard>>& supportCards,
-        const std::function<Score(const DeckDetail&)>& scoreFunc,
+        const std::function<Score(const DeckScoreDetail&)>& scoreFunc,
         RecommendCalcInfo& dfsInfo,
         int limit = 1,
         bool isChallengeLive = false,
@@ -245,7 +256,7 @@ public:
         int liveType,
         const DeckRecommendConfig& config,
         const std::vector<CardDetail>& cardDetails,
-        const std::function<Score(const DeckDetail&)>& scoreFunc,
+        const std::function<Score(const DeckScoreDetail&)>& scoreFunc,
         RecommendCalcInfo& dfsInfo,
         int limit = 1,
         int member = 5,
@@ -266,7 +277,7 @@ public:
         int liveType,
         const DeckRecommendConfig& config,
         const std::vector<CardDetail>& cardDetails,
-        const std::function<Score(const DeckDetail&)>& scoreFunc,
+        const std::function<Score(const DeckScoreDetail&)>& scoreFunc,
         RecommendCalcInfo& dfsInfo,
         int limit = 1,
         int member = 5,
