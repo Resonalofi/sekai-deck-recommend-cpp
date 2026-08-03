@@ -64,6 +64,7 @@ CardSkillDetailMap CardSkillCalculator::getCardSkill(
             }
         }
     }
+    skillMap.finalize();
     return skillMap;
 }
 

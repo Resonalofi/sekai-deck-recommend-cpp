@@ -29,6 +29,7 @@ CardPowerDetailMap CardPowerCalculator::getCardPower(
         power = getPower(card, basePower, characterBonus, fixtureBonus, gateBonus, userAreaItemLevels, unit, false, false);
         ret.set(unit, 1, 1, power.total, power);
     }
+    ret.finalize();
     return ret;
 }
 

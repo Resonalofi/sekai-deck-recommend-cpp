@@ -26,11 +26,6 @@ class CardDetailMap {
     std::array<T, Capacity> values{};
     uint8_t size = 0;
 
-    inline const T* getValue(int unit, int unitMember, int attrMember) const {
-        auto index = indexes[getKey(unit, unitMember, attrMember)];
-        return index == 0 ? nullptr : &values[index - 1];
-    }
-
     inline int getKey(int unit, int unitMember, int attrMember) const {
         assert(unit >= 0 && unit < UNIT_MAX);
         assert(unitMember >= 0 && unitMember < UNIT_MEMBER_MAX);
@@ -66,6 +61,38 @@ public:
     }
 
     /**
+     * 将查询时的回退规则预解析到索引表中。
+     * 必须在全部 set 完成后调用。
+     */
+    inline void finalize() {
+        const auto exactIndexes = indexes;
+        for (int unit = 0; unit < UNIT_MAX; ++unit) {
+            for (int unitMember = 0; unitMember < UNIT_MEMBER_MAX; ++unitMember) {
+                for (int attrMember : {1, 5}) {
+                    uint8_t index = 0;
+
+                    if (unit == Enums::Unit::diff)
+                        index = exactIndexes[getKey(Enums::Unit::diff, std::min(2, unitMember), 1)];
+
+                    if (index == 0 && unit == Enums::Unit::ref)
+                        index = exactIndexes[getKey(Enums::Unit::ref, 1, 1)];
+
+                    if (index == 0)
+                        index = exactIndexes[getKey(unit, unitMember, attrMember)];
+
+                    if (index == 0)
+                        index = exactIndexes[getKey(unit, unitMember == 5 ? 5 : 1, attrMember)];
+
+                    if (index == 0)
+                        index = exactIndexes[getKey(Enums::Unit::any, 1, 1)];
+
+                    indexes[getKey(unit, unitMember, attrMember)] = index;
+                }
+            }
+        }
+    }
+
+    /**
      * 获取给定情况下的值
      * 会返回最合适的值，如果给定的条件与卡牌完全不符会给出异常
      * @param unit 组合
@@ -73,36 +100,11 @@ public:
      * @param attrMember 卡牌属性对应的人数（真实值）
      */
     inline T get(int unit, int unitMember, int attrMember) const {
-        // 所有情况下，属性实际只有混不混的区别
         attrMember = (attrMember == 5 ? 5 : 1);
-        const T* best = nullptr;
-
-        // (vsbf花前) 不同组数只能是0-2
-        if (unit == Enums::Unit::diff) {
-            best = this->getValue(Enums::Unit::diff, std::min(2, unitMember), 1);
-            if (best) return *best;
-        }
-
-        // (ocbf花前) 这边unit其实是当作技能tag用
-        if (unit == Enums::Unit::ref) {
-            best = this->getValue(Enums::Unit::ref, 1, 1);
-            if (best) return *best;
-        }
-
-        // (组分) 受指定组合人数影响的情况 
-        best = this->getValue(unit, unitMember, attrMember);  
-        if (best) return *best;
-
-        // (综合力计算) 只考虑混不混组的情况
-        best = this->getValue(unit, unitMember == 5 ? 5 : 1, attrMember);
-        if (best) return *best;
-
-        // 技能为固定数值的情况（能够变化但取到保底固定数值的也会落到这里）
-        best = this->getValue(Enums::Unit::any, 1, 1);
-        if (best) return *best;
-
-        // 如果这还找不到，说明给的情况就不对
-        throw std::runtime_error("case not found");
+        auto index = indexes[getKey(unit, unitMember, attrMember)];
+        if (index == 0)
+            throw std::runtime_error("case not found");
+        return values[index - 1];
     }
 
     /**
