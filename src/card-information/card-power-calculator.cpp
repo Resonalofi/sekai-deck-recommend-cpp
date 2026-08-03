@@ -54,16 +54,8 @@ BasePower CardPowerCalculator::getBasePower(const UserCard &userCard, const Card
 
     BasePower ret = {0, 0, 0};
     // 等级
-    for (auto& it : card.cardParameters) {
-        if (it.cardLevel == userCard.level) {
-            if (it.cardParameterType == Enums::CardParameterType::param1)
-                ret[0] = it.power;
-            else if (it.cardParameterType == Enums::CardParameterType::param2)
-                ret[1] = it.power;
-            else if (it.cardParameterType == Enums::CardParameterType::param3)
-                ret[2] = it.power;
-        }
-    }
+    if (userCard.level > 0 && userCard.level <= static_cast<int>(card.levelPowers.size()))
+        ret = card.levelPowers[userCard.level - 1];
     // 觉醒
     if (userCard.specialTrainingStatus == Enums::SpecialTrainingStatus::done) {
         ret[0] += card.specialTrainingPower1BonusFixed;

@@ -2,24 +2,7 @@
 #define CARD_H
 
 #include "common/collection-utils.h"
-
-struct CardParameter {
-    int cardLevel = 0;
-    int cardParameterType = 0;
-    int power = 0;
-
-    static inline std::vector<CardParameter> fromJsonList(const json& jsonData) {
-        std::vector<CardParameter> cardParameters;
-        for (const auto& item : jsonData) {
-            CardParameter cardParameter;
-            cardParameter.cardLevel = item.value("cardLevel", 0);
-            cardParameter.cardParameterType = mapEnum(EnumMap::cardParameterType, item.value("cardParameterType", ""));
-            cardParameter.power = item.value("power", 0);
-            cardParameters.push_back(cardParameter);
-        }
-        return cardParameters;
-    }
-};
+#include <array>
 
 struct Card {
     int id = 0;
@@ -33,7 +16,7 @@ struct Card {
     int supportUnit;
     int skillId = 0;
     int specialTrainingSkillId = 0;
-    std::vector<CardParameter> cardParameters;
+    std::vector<std::array<int, 3>> levelPowers;
 
     static inline std::vector<Card> fromJsonList(const json& jsonData) {
         std::vector<Card> cards;
@@ -53,17 +36,31 @@ struct Card {
             
             if (item["cardParameters"].is_array()) {
                 // 日服格式 card param
-                card.cardParameters = CardParameter::fromJsonList(item["cardParameters"]);
+                card.levelPowers.reserve(item["cardParameters"].size() / 3);
+                for (const auto& parameter : item["cardParameters"]) {
+                    int level = parameter.value("cardLevel", 0);
+                    int type = mapEnum(EnumMap::cardParameterType, parameter.value("cardParameterType", ""));
+                    int power = parameter.value("power", 0);
+                    if (level <= 0)
+                        continue;
+                    if (card.levelPowers.size() < static_cast<size_t>(level))
+                        card.levelPowers.resize(level);
+                    if (type == Enums::CardParameterType::param1)
+                        card.levelPowers[level - 1][0] = power;
+                    else if (type == Enums::CardParameterType::param2)
+                        card.levelPowers[level - 1][1] = power;
+                    else if (type == Enums::CardParameterType::param3)
+                        card.levelPowers[level - 1][2] = power;
+                }
             } else {
                 // 国服格式 card param 
-                const std::vector<std::string> keys = { "param1", "param2", "param3" };
-                for (const auto& key : keys) {
-                    for (int i = 0; i < (int)item["cardParameters"][key].size(); i++) {
-                        CardParameter cardParameter;
-                        cardParameter.cardLevel = i + 1;
-                        cardParameter.cardParameterType = mapEnum(EnumMap::cardParameterType, key);
-                        cardParameter.power = item["cardParameters"][key][i];
-                        card.cardParameters.push_back(cardParameter);
+                const std::array<std::string, 3> keys = { "param1", "param2", "param3" };
+                for (size_t type = 0; type < keys.size(); ++type) {
+                    const auto& powers = item["cardParameters"][keys[type]];
+                    if (card.levelPowers.size() < powers.size())
+                        card.levelPowers.resize(powers.size());
+                    for (size_t level = 0; level < powers.size(); ++level) {
+                        card.levelPowers[level][type] = powers[level];
                     }
                 }
             }
