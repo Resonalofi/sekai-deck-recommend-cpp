@@ -105,6 +105,38 @@ int DeckCalculator::getHonorBonusPower()
     return bonus;
 }
 
+DeckPowerCalculation DeckCalculator::getDeckPowerByCards(
+    const std::vector<const CardDetail*>& cardDetails,
+    int honorBonus
+)
+{
+    DeckPowerCalculation result{};
+    int attrMap[16] = {};
+    for (const auto* card : cardDetails) {
+        ++attrMap[card->attr];
+        for (const auto unit : card->units)
+            ++result.unitCounts[unit];
+    }
+    for (size_t i = 0; i < cardDetails.size(); ++i) {
+        const auto& card = *cardDetails[i];
+        DeckCardPowerDetail power{};
+        for (const auto unit : card.units) {
+            auto current = card.power.get(unit, result.unitCounts[unit], attrMap[card.attr]);
+            if (current.total > power.total)
+                power = current;
+        }
+        result.cards[i] = power;
+        result.total.base += power.base;
+        result.total.areaItemBonus += power.areaItemBonus;
+        result.total.characterBonus += power.characterBonus;
+        result.total.fixtureBonus += power.fixtureBonus;
+        result.total.gateBonus += power.gateBonus;
+        result.total.total += power.total;
+    }
+    result.total.total += honorBonus;
+    return result;
+}
+
 
 std::vector<DeckDetail> DeckCalculator::getDeckDetailByCards(
     const std::vector<const CardDetail*> &cardDetails, 
@@ -134,44 +166,16 @@ std::vector<DeckDetail> DeckCalculator::getDeckDetailByCards(
         );
     }
 
-    // 预处理队伍和属性，存储每个队伍或属性出现的次数
+    auto powerCalculation = getDeckPowerByCards(cardDetails, honorBonus);
+
+    // 预处理队伍，存储每个队伍出现的次数
     int card_num = int(cardDetails.size());
-    int attr_map[16] = {};
-    int unit_map[16] = {};
-    for (auto p : cardDetails) {
-        auto& cardDetail = *p;
-        attr_map[cardDetail.attr]++;
-        for (const auto &key : cardDetail.units) {
-            unit_map[key]++;
-        }
-    }
     int unit_num = 0;
     for (int i = 0; i < 16; ++i) 
-        unit_num += bool(unit_map[i]);
+        unit_num += bool(powerCalculation.unitCounts[i]);
 
-    // 计算当前卡组的综合力，要加上称号的固定加成
-    std::array<DeckCardPowerDetail, 5> cardPower{};
-    for (int i = 0; i < card_num; ++i) {
-        auto& cardDetail = *cardDetails[i];
-        DeckCardPowerDetail powerDetail = {};
-        for (const auto &unit : cardDetail.units) {
-            auto current = cardDetail.power.get(unit, unit_map[unit], attr_map[cardDetail.attr]);
-            // 有多个组合时，取最高加成组合
-            powerDetail = current.total > powerDetail.total ? current : powerDetail;
-        }
-        cardPower[i] = powerDetail;
-    }
-    DeckPowerDetail power{};
-    for (int i = 0; i < card_num; ++i) {
-        auto& p = cardPower[i];
-        power.base += p.base;
-        power.areaItemBonus += p.areaItemBonus;
-        power.characterBonus += p.characterBonus;
-        power.fixtureBonus += p.fixtureBonus;
-        power.gateBonus += p.gateBonus;
-        power.total += p.total;
-    }
-    power.total += honorBonus;
+    const auto& cardPower = powerCalculation.cards;
+    const auto& power = powerCalculation.total;
 
     // 计算当前卡组每个卡牌的花前/花后固定技能效果（进Live之前）
     std::array<std::array<DeckCardSkillDetail, 2>, 5> prepareSkills{};
@@ -185,7 +189,7 @@ std::vector<DeckDetail> DeckCalculator::getDeckDetailByCards(
         DeckCardSkillDetail s2 = {};
         // 组分技能效果（对vs有多个组合取最大）或 固定技能效果
         for (const auto &unit : cardDetail.units) {
-            auto current = cardDetail.skill.get(unit, unit_map[unit], 1);
+            auto current = cardDetail.skill.get(unit, powerCalculation.unitCounts[unit], 1);
             if (current.scoreUp > s2.scoreUp) s2 = current;
         }
 

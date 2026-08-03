@@ -23,6 +23,12 @@ struct SupportDeckBonus {
     std::vector<CardDetail> cards;
 };
 
+struct DeckPowerCalculation {
+    std::array<DeckCardPowerDetail, 5> cards{};
+    DeckPowerDetail total{};
+    std::array<int, 16> unitCounts{};
+};
+
 class DeckCalculator {
     DataProvider dataProvider;
     CardCalculator cardCalculator;
@@ -68,6 +74,11 @@ public:
      * 获取称号的综合力加成（与卡牌无关、根据称号累加）
      */
     int getHonorBonusPower();
+
+    DeckPowerCalculation getDeckPowerByCards(
+        const std::vector<const CardDetail*>& cardDetails,
+        int honorBonus = 0
+    );
 
     /**
      * 计算给定的多张卡牌综合力、技能
