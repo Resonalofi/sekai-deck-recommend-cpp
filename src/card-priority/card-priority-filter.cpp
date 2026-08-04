@@ -161,11 +161,11 @@ std::vector<CardDetail> filterCardPriority(int liveType, int eventType, std::vec
 std::vector<CardPriority> getCardPriorities(int liveType, int eventType)
 {
     if (Enums::LiveType::isChallenge(liveType))
-        return challengeLiveCardPriorities;
+        return getChallengeLiveCardPriorities();
     if (eventType == Enums::EventType::world_bloom)
-        return bloomCardPriorities;
+        return getBloomCardPriorities();
     if (eventType == Enums::EventType::marathon || eventType == Enums::EventType::cheerful)
-        return marathonCheerfulCardPriorities;
+        return getMarathonCheerfulCardPriorities();
     // 如果都不满足，那就只能都不筛选，所有卡全上
     return std::vector<CardPriority>();
 }
