@@ -32,7 +32,7 @@ void BaseDeckRecommend::findBestCardsDFS(
     // 已经是完整卡组，计算当前卡组的值
     if (int(deckCards.size()) == member) {
         if (cfg.target == RecommendTarget::Power && int(dfsInfo.deckQueue.size()) >= limit) {
-            auto power = this->deckCalculator.getDeckPowerByCards(deckCards, honorBonus).total.total;
+            auto power = this->deckCalculator.getDeckTotalPowerByCards(deckCards, honorBonus);
             if (power < dfsInfo.deckQueue.top().power.total) {
                 return;
             }

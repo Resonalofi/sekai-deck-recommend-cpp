@@ -139,6 +139,30 @@ DeckPowerCalculation DeckCalculator::getDeckPowerByCards(
 }
 
 
+int DeckCalculator::getDeckTotalPowerByCards(
+    const std::vector<const CardDetail*>& cardDetails,
+    int honorBonus
+)
+{
+    int attrCounts[16] = {};
+    int unitCounts[16] = {};
+    for (const auto* card : cardDetails) {
+        ++attrCounts[card->attr];
+        for (const auto unit : card->units)
+            ++unitCounts[unit];
+    }
+
+    int total = honorBonus;
+    for (const auto* card : cardDetails) {
+        int cardPower = 0;
+        for (const auto unit : card->units)
+            cardPower = std::max(cardPower, card->power.get(unit, unitCounts[unit], attrCounts[card->attr]).total);
+        total += cardPower;
+    }
+    return total;
+}
+
+
 void DeckCalculator::forEachDeckState(
     const std::vector<const CardDetail*> &cardDetails,
     std::map<int, std::vector<SupportDeckCard>>& supportCards,

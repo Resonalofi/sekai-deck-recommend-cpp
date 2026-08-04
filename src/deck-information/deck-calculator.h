@@ -95,6 +95,11 @@ public:
         int honorBonus = 0
     );
 
+    int getDeckTotalPowerByCards(
+        const std::vector<const CardDetail*>& cardDetails,
+        int honorBonus = 0
+    );
+
     void forEachDeckState(
         const std::vector<const CardDetail*>& cardDetails,
         std::map<int, std::vector<SupportDeckCard>>& supportCards,
