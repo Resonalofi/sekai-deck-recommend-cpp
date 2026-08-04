@@ -1,15 +1,5 @@
 #include "deck-recommend/base-deck-recommend.h"
 
-template<typename T>
-bool containsAny(const std::vector<T>& collection, const std::vector<T>& contains) {
-    for (const auto& item : collection) {
-        if (std::find(contains.begin(), contains.end(), item) != contains.end()) {
-            return true;
-        }
-    }
-    return false;
-}
-
 
 void BaseDeckRecommend::findBestCardsDFS(
     int liveType,
@@ -92,6 +82,12 @@ void BaseDeckRecommend::findBestCardsDFS(
 
     // 非完整卡组，继续遍历所有情况
     const CardDetail* preCard = nullptr;
+    auto cIndex = fixedCards.size() + cfg.fixedCharacters.size();
+    uint32_t leaderUnitMask = 0;
+    if (deckCards.size() >= cIndex + 1) {
+        for (const auto unit : deckCards[cIndex]->units)
+            leaderUnitMask |= uint32_t{1} << unit;
+    }
 
     for (const auto& card : cardDetails) {
         // 跳过已经重复出现过的卡牌
@@ -112,12 +108,15 @@ void BaseDeckRecommend::findBestCardsDFS(
         }
         
         // C位相关优化，如果使用固定卡牌，则认为C位是第一个不固定的位置，后面的同理（即固定卡牌不参加剪枝）
-        auto cIndex = fixedCards.size() + cfg.fixedCharacters.size();
         // C位一定是技能最好的卡牌，跳过技能比C位还好的
         if (deckCards.size() >= cIndex + 1 && deckCards[cIndex]->skill.isCertainlyLessThan(card.skill)) continue;
         // 为了优化性能，必须和C位同色或同组
-        if (deckCards.size() >= cIndex + 1 && card.attr != deckCards[cIndex]->attr && !containsAny(deckCards[cIndex]->units, card.units)) {
-            continue;
+        if (deckCards.size() >= cIndex + 1 && card.attr != deckCards[cIndex]->attr) {
+            bool sharesUnit = false;
+            for (const auto unit : card.units)
+                sharesUnit |= leaderUnitMask & (uint32_t{1} << unit);
+            if (!sharesUnit)
+                continue;
         }
 
         if (deckCards.size() >= cIndex + 2) {
