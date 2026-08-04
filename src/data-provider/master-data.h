@@ -6,6 +6,9 @@
 
 constexpr int finalChapterEventId = 180;
 
+extern const std::vector<std::string> requiredMasterDataKeys;
+extern const std::vector<std::string> notRequiredMasterDataKeys;
+
 
 class MasterData {
 
