@@ -7,9 +7,13 @@
 #include <chrono>
 #include <fstream>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten/bind.h>
+#else
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 namespace py = pybind11;
+#endif
 
 
 // 初始化静态数据路径
@@ -125,6 +129,7 @@ struct PyCardConfig {
     std::optional<bool> skill_max;
     std::optional<bool> canvas;
 
+#ifndef __EMSCRIPTEN__
     py::dict to_dict() const {
         py::dict result;
         if (disable.has_value())        result["disable"] = disable.value();
@@ -145,6 +150,7 @@ struct PyCardConfig {
         if (dict.contains("canvas"))         config.canvas = dict["canvas"].cast<bool>();
         return config;
     }
+#endif
 };
 
 // python传入的单独card config
@@ -157,6 +163,7 @@ struct PySingleCardConfig {
     std::optional<bool> skill_max;
     std::optional<bool> canvas;
 
+#ifndef __EMSCRIPTEN__
     py::dict to_dict() const {
         py::dict result;
         result["card_id"] = card_id;
@@ -179,6 +186,7 @@ struct PySingleCardConfig {
         if (dict.contains("canvas"))         config.canvas = dict["canvas"].cast<bool>();
         return config;
     }
+#endif
 };
 
 // python传入的模拟退火参数
@@ -192,6 +200,7 @@ struct PySaOptions {
     std::optional<double> cooling_rate;
     std::optional<bool> debug;
 
+#ifndef __EMSCRIPTEN__
     py::dict to_dict() const {
         py::dict result;
         if (run_num.has_value())                result["run_num"] = run_num.value();
@@ -216,6 +225,7 @@ struct PySaOptions {
         if (dict.contains("debug"))                  options.debug = dict["debug"].cast<bool>();
         return options;
     }
+#endif
 };
 
 // python传入的遗传算法参数
@@ -231,6 +241,7 @@ struct PyGaOptions {
     std::optional<double> base_mutation_rate;
     std::optional<double> no_improve_iter_to_mutation_rate;
 
+#ifndef __EMSCRIPTEN__
     py::dict to_dict() const {
         py::dict result;
         if (seed.has_value())                        result["seed"] = seed.value();
@@ -261,6 +272,7 @@ struct PyGaOptions {
             options.no_improve_iter_to_mutation_rate = dict["no_improve_iter_to_mutation_rate"].cast<double>();
         return options;
     }
+#endif
 };
 
 // python传入的推荐参数
@@ -305,6 +317,7 @@ struct PyDeckRecommendOptions {
     std::optional<PySaOptions> sa_options;
     std::optional<PyGaOptions> ga_options;
 
+#ifndef __EMSCRIPTEN__
     py::dict to_dict() const {
         if (user_data.has_value()) 
             throw std::runtime_error("Cannot be converted to dict when user_data is set.");
@@ -450,6 +463,7 @@ struct PyDeckRecommendOptions {
             options.ga_options = PyGaOptions::from_dict(dict["ga_options"].cast<py::dict>());
         return options;
     }
+#endif
 };
 
 // 单个Card推荐结果
@@ -469,6 +483,7 @@ struct PyRecommendCard {
     std::string default_image;
     bool has_canvas_bonus;
 
+#ifndef __EMSCRIPTEN__
     py::dict to_dict() const {
         py::dict result;
         result["card_id"] = card_id;
@@ -505,6 +520,7 @@ struct PyRecommendCard {
         card.has_canvas_bonus = dict["has_canvas_bonus"].cast<bool>();
         return card;
     }
+#endif
 };
 
 // 单个Deck推荐结果
@@ -524,6 +540,7 @@ struct PyRecommendDeck {
     double multi_live_score_up;
     std::vector<PyRecommendCard> cards;
 
+#ifndef __EMSCRIPTEN__
     py::dict to_dict() const {
         py::dict result;
         result["score"] = score;
@@ -571,12 +588,14 @@ struct PyRecommendDeck {
         
         return deck;
     }
+#endif
 };
 
 // 返回python的推荐结果
 struct PyDeckRecommendResult {
     std::vector<PyRecommendDeck> decks;
 
+#ifndef __EMSCRIPTEN__
     py::dict to_dict() const {
         py::dict result;
         py::list deck_list;
@@ -594,6 +613,7 @@ struct PyDeckRecommendResult {
         }
         return result;
     }
+#endif
 };
 
 // 推荐主类
@@ -1125,18 +1145,25 @@ public:
         region_masterdata[REGION_ENUM_MAP.at(region)]->loadFromFiles(base_dir);
     }
 
-    // 从指定string的dict更新区服masterdata数据
-    void update_masterdata_from_strings(const py::dict& dict, const std::string& region) {
+    void update_masterdata_from_string_map(std::map<std::string, std::string> data, const std::string& region) {
         if (!REGION_ENUM_MAP.count(region)) 
             throw std::invalid_argument("Invalid region: " + region);
+        auto masterdata = std::make_shared<MasterData>();
+        masterdata->loadFromStrings(data);
+        region_masterdata[REGION_ENUM_MAP.at(region)] = std::move(masterdata);
+    }
+
+#ifndef __EMSCRIPTEN__
+    // 从指定string的dict更新区服masterdata数据
+    void update_masterdata_from_strings(const py::dict& dict, const std::string& region) {
         std::map<std::string, std::string> data;
         for (const auto& item : dict) {
             std::string key = item.first.cast<std::string>();
             data[key] = item.second.cast<std::string>();
         }
-        region_masterdata[REGION_ENUM_MAP.at(region)] = std::make_shared<MasterData>();
-        region_masterdata[REGION_ENUM_MAP.at(region)]->loadFromStrings(data);
+        update_masterdata_from_string_map(std::move(data), region);
     }
+#endif
 
     // 从指定文件更新区服musicmetas数据
     void update_musicmetas(const std::string& file_path, const std::string& region) {
@@ -1190,6 +1217,7 @@ public:
 };
 
 
+#ifndef __EMSCRIPTEN__
 PYBIND11_MODULE(sekai_deck_recommend, m) {
     m.doc() = "pybind11 sekai_deck_recommend plugin";
 
@@ -1357,4 +1385,236 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
         .def("update_musicmetas_from_string", &SekaiDeckRecommend::update_musicmetas_from_string)
         .def("recommend", &SekaiDeckRecommend::recommend);
 }
+#else
+namespace {
 
+template<typename T>
+void readOptional(const json& data, const char* key, std::optional<T>& target) {
+    const auto it = data.find(key);
+    if (it != data.end() && !it->is_null())
+        target = it->get<T>();
+}
+
+PyCardConfig cardConfigFromJson(const json& data) {
+    PyCardConfig config;
+    readOptional(data, "disable", config.disable);
+    readOptional(data, "level_max", config.level_max);
+    readOptional(data, "episode_read", config.episode_read);
+    readOptional(data, "master_max", config.master_max);
+    readOptional(data, "skill_max", config.skill_max);
+    readOptional(data, "canvas", config.canvas);
+    return config;
+}
+
+PySingleCardConfig singleCardConfigFromJson(const json& data) {
+    PySingleCardConfig config;
+    config.card_id = data.at("card_id").get<int>();
+    readOptional(data, "disable", config.disable);
+    readOptional(data, "level_max", config.level_max);
+    readOptional(data, "episode_read", config.episode_read);
+    readOptional(data, "master_max", config.master_max);
+    readOptional(data, "skill_max", config.skill_max);
+    readOptional(data, "canvas", config.canvas);
+    return config;
+}
+
+PySaOptions saOptionsFromJson(const json& data) {
+    PySaOptions options;
+    readOptional(data, "run_num", options.run_num);
+    readOptional(data, "seed", options.seed);
+    readOptional(data, "max_iter", options.max_iter);
+    readOptional(data, "max_no_improve_iter", options.max_no_improve_iter);
+    readOptional(data, "time_limit_ms", options.time_limit_ms);
+    readOptional(data, "start_temprature", options.start_temprature);
+    readOptional(data, "cooling_rate", options.cooling_rate);
+    readOptional(data, "debug", options.debug);
+    return options;
+}
+
+PyGaOptions gaOptionsFromJson(const json& data) {
+    PyGaOptions options;
+    readOptional(data, "seed", options.seed);
+    readOptional(data, "debug", options.debug);
+    readOptional(data, "max_iter", options.max_iter);
+    readOptional(data, "max_no_improve_iter", options.max_no_improve_iter);
+    readOptional(data, "pop_size", options.pop_size);
+    readOptional(data, "parent_size", options.parent_size);
+    readOptional(data, "elite_size", options.elite_size);
+    readOptional(data, "crossover_rate", options.crossover_rate);
+    readOptional(data, "base_mutation_rate", options.base_mutation_rate);
+    readOptional(data, "no_improve_iter_to_mutation_rate", options.no_improve_iter_to_mutation_rate);
+    return options;
+}
+
+PyDeckRecommendOptions optionsFromJson(const json& data, const std::string& userData) {
+    PyDeckRecommendOptions options;
+    readOptional(data, "target", options.target);
+    readOptional(data, "algorithm", options.algorithm);
+    readOptional(data, "region", options.region);
+    options.user_data_str = userData;
+    readOptional(data, "live_type", options.live_type);
+    readOptional(data, "music_id", options.music_id);
+    readOptional(data, "music_diff", options.music_diff);
+    readOptional(data, "event_id", options.event_id);
+    readOptional(data, "event_attr", options.event_attr);
+    readOptional(data, "event_unit", options.event_unit);
+    readOptional(data, "event_type", options.event_type);
+    readOptional(data, "world_bloom_event_turn", options.world_bloom_event_turn);
+    readOptional(data, "world_bloom_character_id", options.world_bloom_character_id);
+    readOptional(data, "challenge_live_character_id", options.challenge_live_character_id);
+    readOptional(data, "limit", options.limit);
+    readOptional(data, "member", options.member);
+    readOptional(data, "timeout_ms", options.timeout_ms);
+
+    const auto readCardConfig = [&](const char* key, std::optional<PyCardConfig>& target) {
+        const auto it = data.find(key);
+        if (it != data.end() && !it->is_null())
+            target = cardConfigFromJson(*it);
+    };
+    readCardConfig("rarity_1_config", options.rarity_1_config);
+    readCardConfig("rarity_2_config", options.rarity_2_config);
+    readCardConfig("rarity_3_config", options.rarity_3_config);
+    readCardConfig("rarity_birthday_config", options.rarity_birthday_config);
+    readCardConfig("rarity_4_config", options.rarity_4_config);
+
+    const auto singleCardConfigs = data.find("single_card_configs");
+    if (singleCardConfigs != data.end() && !singleCardConfigs->is_null()) {
+        options.single_card_configs = std::vector<PySingleCardConfig>{};
+        for (const auto& item : *singleCardConfigs)
+            options.single_card_configs->push_back(singleCardConfigFromJson(item));
+    }
+
+    readOptional(data, "filter_other_unit", options.filter_other_unit);
+    readOptional(data, "fixed_cards", options.fixed_cards);
+    readOptional(data, "fixed_characters", options.fixed_characters);
+    readOptional(data, "target_bonus_list", options.target_bonus_list);
+    readOptional(data, "skill_reference_choose_strategy", options.skill_reference_choose_strategy);
+    readOptional(data, "keep_after_training_state", options.keep_after_training_state);
+    readOptional(data, "multi_live_teammate_score_up", options.multi_live_teammate_score_up);
+    readOptional(data, "multi_live_teammate_power", options.multi_live_teammate_power);
+    readOptional(data, "best_skill_as_leader", options.best_skill_as_leader);
+    readOptional(data, "multi_live_score_up_lower_bound", options.multi_live_score_up_lower_bound);
+    readOptional(data, "skill_order_choose_strategy", options.skill_order_choose_strategy);
+    readOptional(data, "specific_skill_order", options.specific_skill_order);
+
+    const auto saOptions = data.find("sa_options");
+    if (saOptions != data.end() && !saOptions->is_null())
+        options.sa_options = saOptionsFromJson(*saOptions);
+    const auto gaOptions = data.find("ga_options");
+    if (gaOptions != data.end() && !gaOptions->is_null())
+        options.ga_options = gaOptionsFromJson(*gaOptions);
+    return options;
+}
+
+json resultToJson(const PyDeckRecommendResult& result) {
+    json decks = json::array();
+    for (const auto& deck : result.decks) {
+        json cards = json::array();
+        for (const auto& card : deck.cards) {
+            cards.push_back({
+                {"card_id", card.card_id},
+                {"total_power", card.total_power},
+                {"base_power", card.base_power},
+                {"event_bonus_rate", card.event_bonus_rate},
+                {"master_rank", card.master_rank},
+                {"level", card.level},
+                {"skill_level", card.skill_level},
+                {"skill_score_up", card.skill_score_up},
+                {"skill_life_recovery", card.skill_life_recovery},
+                {"episode1_read", card.episode1_read},
+                {"episode2_read", card.episode2_read},
+                {"after_training", card.after_training},
+                {"default_image", card.default_image},
+                {"has_canvas_bonus", card.has_canvas_bonus},
+            });
+        }
+        decks.push_back({
+            {"score", deck.score},
+            {"live_score", deck.live_score},
+            {"mysekai_event_point", deck.mysekai_event_point},
+            {"total_power", deck.total_power},
+            {"base_power", deck.base_power},
+            {"area_item_bonus_power", deck.area_item_bonus_power},
+            {"character_bonus_power", deck.character_bonus_power},
+            {"honor_bonus_power", deck.honor_bonus_power},
+            {"fixture_bonus_power", deck.fixture_bonus_power},
+            {"gate_bonus_power", deck.gate_bonus_power},
+            {"event_bonus_rate", deck.event_bonus_rate},
+            {"support_deck_bonus_rate", deck.support_deck_bonus_rate},
+            {"multi_live_score_up", deck.multi_live_score_up},
+            {"cards", std::move(cards)},
+        });
+    }
+    return {{"decks", std::move(decks)}};
+}
+
+class WasmDeckRecommendEngine {
+    SekaiDeckRecommend engine;
+    std::map<std::string, std::string> pendingMasterdata;
+
+public:
+    WasmDeckRecommendEngine() {
+        init_data_path("/data");
+    }
+
+    std::string masterdataManifest() const {
+        return json({
+            {"required", requiredMasterDataKeys},
+            {"optional", notRequiredMasterDataKeys},
+        }).dump();
+    }
+
+    void beginMasterdataUpdate() {
+        pendingMasterdata.clear();
+    }
+
+    void addMasterdata(const std::string& key, const std::string& data) {
+        pendingMasterdata[key] = data;
+    }
+
+    std::string commitMasterdataUpdate(const std::string& region) {
+        try {
+            engine.update_masterdata_from_string_map(std::move(pendingMasterdata), region);
+            pendingMasterdata.clear();
+            return {};
+        }
+        catch (const std::exception& error) {
+            pendingMasterdata.clear();
+            return error.what();
+        }
+    }
+
+    std::string updateMusicmetas(const std::string& data, const std::string& region) {
+        try {
+            engine.update_musicmetas_from_string(data, region);
+            return {};
+        }
+        catch (const std::exception& error) {
+            return error.what();
+        }
+    }
+
+    std::string recommend(const std::string& optionsData, const std::string& userData) {
+        try {
+            const auto options = optionsFromJson(json::parse(optionsData), userData);
+            return resultToJson(engine.recommend(options)).dump();
+        }
+        catch (const std::exception& error) {
+            return json({{"error", error.what()}}).dump();
+        }
+    }
+};
+
+}
+
+EMSCRIPTEN_BINDINGS(sekai_deck_recommend_wasm) {
+    emscripten::class_<WasmDeckRecommendEngine>("SekaiDeckRecommend")
+        .constructor<>()
+        .function("masterdataManifest", &WasmDeckRecommendEngine::masterdataManifest)
+        .function("beginMasterdataUpdate", &WasmDeckRecommendEngine::beginMasterdataUpdate)
+        .function("addMasterdata", &WasmDeckRecommendEngine::addMasterdata)
+        .function("commitMasterdataUpdate", &WasmDeckRecommendEngine::commitMasterdataUpdate)
+        .function("updateMusicmetas", &WasmDeckRecommendEngine::updateMusicmetas)
+        .function("recommend", &WasmDeckRecommendEngine::recommend);
+}
+#endif

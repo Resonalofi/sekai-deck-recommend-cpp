@@ -8,30 +8,74 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include_directories(${PROJECT_SOURCE_DIR}/src)
 include_directories(${PROJECT_SOURCE_DIR}/3rdparty/json/single_include)
 
-file(GLOB_RECURSE SRC_FILES "${PROJECT_SOURCE_DIR}/src/*.cpp")
+file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/src/*.cpp")
 
-add_subdirectory(3rdparty/pybind11)
-
-pybind11_add_module(sekai_deck_recommend ${SRC_FILES})
-
-if (MSVC)
-    target_compile_options(sekai_deck_recommend PRIVATE
-        /W4
-        /MP
-        /Z7
+if (EMSCRIPTEN)
+    set(SEKAI_DECK_RECOMMEND_WASM_OUTPUT_DIR "" CACHE PATH
+        "Optional directory that receives the generated WASM browser assets")
+    add_executable(sekai_deck_recommend_wasm ${SRC_FILES})
+    set_target_properties(sekai_deck_recommend_wasm PROPERTIES
+        OUTPUT_NAME "sekai_deck_recommend_wasm"
+        SUFFIX ".js"
     )
-    target_link_options(sekai_deck_recommend PRIVATE
-        /DEBUG:NONE
+    target_compile_options(sekai_deck_recommend_wasm PRIVATE
+        -Wall
+        -Wextra
+        -Wuninitialized
+        -fexceptions
     )
+    target_link_options(sekai_deck_recommend_wasm PRIVATE
+        --bind
+        -fexceptions
+        "-sALLOW_MEMORY_GROWTH=1"
+        "-sDISABLE_EXCEPTION_CATCHING=0"
+        "-sENVIRONMENT=web,worker"
+        "-sEXPORT_ES6=1"
+        "-sEXPORT_NAME=createSekaiDeckRecommendModule"
+        "-sFILESYSTEM=1"
+        "-sINITIAL_MEMORY=268435456"
+        "-sMODULARIZE=1"
+        "--preload-file=${PROJECT_SOURCE_DIR}/data@/data"
+    )
+    if (SEKAI_DECK_RECOMMEND_WASM_OUTPUT_DIR)
+        add_custom_command(TARGET sekai_deck_recommend_wasm POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${SEKAI_DECK_RECOMMEND_WASM_OUTPUT_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:sekai_deck_recommend_wasm>"
+                "${SEKAI_DECK_RECOMMEND_WASM_OUTPUT_DIR}/sekai_deck_recommend_wasm.js"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE_DIR:sekai_deck_recommend_wasm>/sekai_deck_recommend_wasm.wasm"
+                "${SEKAI_DECK_RECOMMEND_WASM_OUTPUT_DIR}/sekai_deck_recommend_wasm.wasm"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE_DIR:sekai_deck_recommend_wasm>/sekai_deck_recommend_wasm.data"
+                "${SEKAI_DECK_RECOMMEND_WASM_OUTPUT_DIR}/sekai_deck_recommend_wasm.data"
+        )
+    endif()
 else()
-    target_compile_options(sekai_deck_recommend PRIVATE
-        -Wall -Wextra -Wuninitialized
-    )
+    add_subdirectory(3rdparty/pybind11)
+
+    pybind11_add_module(sekai_deck_recommend ${SRC_FILES})
+
+    if (MSVC)
+        target_compile_options(sekai_deck_recommend PRIVATE
+            /W4
+            /MP
+            /utf-8
+            /Z7
+        )
+        target_link_options(sekai_deck_recommend PRIVATE
+            /DEBUG:NONE
+        )
+    else()
+        target_compile_options(sekai_deck_recommend PRIVATE
+            -Wall -Wextra -Wuninitialized
+        )
+    endif()
+
+    set(INSTALL_DIR "sekai_deck_recommend_cpp")
+
+    install(TARGETS sekai_deck_recommend DESTINATION ${INSTALL_DIR})
+    install(DIRECTORY "${PROJECT_SOURCE_DIR}/data" DESTINATION ${INSTALL_DIR})
+    install(FILES "${PROJECT_SOURCE_DIR}/src/sekai_deck_recommend.pyi" DESTINATION ${INSTALL_DIR})
+    install(FILES "${PROJECT_SOURCE_DIR}/src/__init__.py" DESTINATION ${INSTALL_DIR})
 endif()
-
-set(INSTALL_DIR "sekai_deck_recommend_cpp")
-
-install(TARGETS sekai_deck_recommend DESTINATION ${INSTALL_DIR})
-install(DIRECTORY "${PROJECT_SOURCE_DIR}/data" DESTINATION ${INSTALL_DIR})
-install(FILES "${PROJECT_SOURCE_DIR}/src/sekai_deck_recommend.pyi" DESTINATION ${INSTALL_DIR})
-install(FILES "${PROJECT_SOURCE_DIR}/src/__init__.py" DESTINATION ${INSTALL_DIR})

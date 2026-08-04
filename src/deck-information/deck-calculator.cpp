@@ -348,8 +348,8 @@ std::vector<DeckDetail> DeckCalculator::getDeckDetailByCards(
                 return;
 
             std::vector<DeckCardDetail> cards{};
-            cards.reserve(5);
-            for (int pos = 0; pos < 5; ++pos) {
+            cards.reserve(state.cardCount);
+            for (int pos = 0; pos < state.cardCount; ++pos) {
                 int i = state.order[pos];
                 const auto& cardDetail = *state.cardDetails[i];
 

@@ -27,6 +27,21 @@ cd sekai-deck-recommend-cpp
 pip install -e . -v
 ```
 
+## Build for WebAssembly
+
+Install and activate the Emscripten SDK, then configure the browser build with Ninja:
+
+```bash
+emcmake cmake -S . -B build/wasm -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DSEKAI_DECK_RECOMMEND_WASM_OUTPUT_DIR=/absolute/path/to/browser/assets
+cmake --build build/wasm -j 4
+```
+
+The output directory receives `sekai_deck_recommend_wasm.js`,
+`sekai_deck_recommend_wasm.wasm`, and `sekai_deck_recommend_wasm.data`.
+Omit `SEKAI_DECK_RECOMMEND_WASM_OUTPUT_DIR` to keep the files in the CMake build directory.
+
 ## Usage
 
 ```python
