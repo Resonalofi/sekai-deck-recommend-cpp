@@ -1,7 +1,7 @@
 #include "deck-recommend/base-deck-recommend.h"
 #include <any>
 #include <algorithm>
-#include <memory_resource>
+#include <bit>
 
 
 struct Individual {
@@ -43,6 +43,85 @@ struct Individual {
         s += ")";
         return s;
     }
+};
+
+
+struct FitnessCache {
+    explicit FitnessCache(size_t expectedSize) {
+        allocate(std::bit_ceil(std::max<size_t>(16, expectedSize * 2)));
+    }
+
+    const double* find(uint64_t key) const {
+        size_t index = bucket(key, keys.size() - 1);
+        while (isOccupied(index)) {
+            if (keys[index] == key)
+                return &values[index];
+            index = (index + 1) & (keys.size() - 1);
+        }
+        return nullptr;
+    }
+
+    void insert(uint64_t key, double value) {
+        if ((count + 1) * 10 > keys.size() * 7)
+            rehash(keys.size() * 2);
+        insertWithoutGrowth(key, value);
+    }
+
+private:
+    static size_t bucket(uint64_t key, size_t mask) {
+        key ^= key >> 30;
+        key *= 0xbf58476d1ce4e5b9ULL;
+        key ^= key >> 27;
+        key *= 0x94d049bb133111ebULL;
+        key ^= key >> 31;
+        return key & mask;
+    }
+
+    bool isOccupied(size_t index) const {
+        return occupied[index >> 6] & (uint64_t{1} << (index & 63));
+    }
+
+    void markOccupied(size_t index) {
+        occupied[index >> 6] |= uint64_t{1} << (index & 63);
+    }
+
+    void allocate(size_t capacity) {
+        keys.resize(capacity);
+        values.resize(capacity);
+        occupied.assign((capacity + 63) / 64, 0);
+    }
+
+    void insertWithoutGrowth(uint64_t key, double value) {
+        size_t index = bucket(key, keys.size() - 1);
+        while (isOccupied(index)) {
+            if (keys[index] == key) {
+                values[index] = value;
+                return;
+            }
+            index = (index + 1) & (keys.size() - 1);
+        }
+        keys[index] = key;
+        values[index] = value;
+        markOccupied(index);
+        ++count;
+    }
+
+    void rehash(size_t capacity) {
+        auto oldKeys = std::move(keys);
+        auto oldValues = std::move(values);
+        auto oldOccupied = std::move(occupied);
+        allocate(capacity);
+        count = 0;
+        for (size_t index = 0; index < oldKeys.size(); ++index) {
+            if (oldOccupied[index >> 6] & (uint64_t{1} << (index & 63)))
+                insertWithoutGrowth(oldKeys[index], oldValues[index]);
+        }
+    }
+
+    std::vector<uint64_t> keys;
+    std::vector<double> values;
+    std::vector<uint64_t> occupied;
+    size_t count = 0;
 };
 
 
@@ -142,9 +221,7 @@ void BaseDeckRecommend::findBestCardsGA(
     }
 
     std::vector<const CardDetail*> evaluationDeck(member);
-    std::pmr::unsynchronized_pool_resource fitnessCachePool;
-    std::pmr::unordered_map<uint64_t, double> fitnessCache{&fitnessCachePool};
-    fitnessCache.reserve(cfg.gaPopSize);
+    FitnessCache fitnessCache(cfg.gaPopSize);
 
     // 计算个体的分数并更新答案
     auto updateIndividualScore = [&](Individual& individual) {
@@ -152,8 +229,8 @@ void BaseDeckRecommend::findBestCardsGA(
         auto deckHash = individual.calcDeckHash();
         double targetValue = 0.0;
         auto cached = fitnessCache.find(deckHash);
-        if (cached != fitnessCache.end()) {
-            targetValue = cached->second;
+        if (cached) {
+            targetValue = *cached;
         } else {
             // 计算当前综合力
             std::copy_n(individual.deck.begin(), individual.cardNum, evaluationDeck.begin());
@@ -169,7 +246,7 @@ void BaseDeckRecommend::findBestCardsGA(
                         honorBonus, eventType, eventId, cfg, ret.bestCandidate.value()
                     ), limit);
                 }
-                fitnessCache[deckHash] = targetValue;
+                fitnessCache.insert(deckHash, targetValue);
             } else {
                 // 目前只会由于最低实效限制导致无法组出卡组，这种情况适应度主要考虑实效
                 targetValue = -1e9 + ret.maxMultiLiveScoreUp;
