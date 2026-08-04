@@ -5,6 +5,7 @@
 #include "card-information/card-calculator.h"
 #include "card-information/card-service.h"
 
+#include <array>
 #include <optional>
 
 
@@ -42,6 +43,14 @@ struct DeckDetail {
     double multiLiveScoreUp;
 };
 
+struct DeckScoreDetail {
+    DeckPowerDetail power{};
+    std::optional<double> eventBonus = std::nullopt;
+    std::optional<double> supportDeckBonus = std::nullopt;
+    std::array<double, 5> skillScoreUps{};
+    int cardCount = 0;
+    double multiLiveScoreUp = 0;
+};
 
 class DeckService {
 

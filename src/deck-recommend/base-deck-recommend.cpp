@@ -26,7 +26,7 @@ BestPermutationResult BaseDeckRecommend::getBestPermutation(
     DeckCalculator& deckCalculator,
     const std::vector<const CardDetail*> &deckCards,
     std::map<int, std::vector<SupportDeckCard>>& supportCards,
-    const std::function<Score(const DeckDetail &)> &scoreFunc,
+    const std::function<Score(const DeckScoreDetail &)> &scoreFunc,
     int honorBonus,
     std::optional<int> eventType,
     std::optional<int> eventId,
@@ -38,31 +38,92 @@ BestPermutationResult BaseDeckRecommend::getBestPermutation(
     if (config.fixedCharacters.size()) bestSkillAsLeader = false;
     // 终章活动不允许把技能最强的换到队长
     if (eventId.has_value() && eventId.value() == finalChapterEventId) bestSkillAsLeader = false;
-    // 获取当前卡组的详情
-    auto deckDetails = deckCalculator.getDeckDetailByCards(
-        deckCards, supportCards, honorBonus, eventType, eventId, 
-        config.skillReferenceChooseStrategy, config.keepAfterTrainingState, bestSkillAsLeader
-    );
-    // 获取最高分的卡组
     double maxValue{};
     BestPermutationResult ret{};
-    for (auto& deckDetail : deckDetails) {
-        auto score = scoreFunc(deckDetail);
-        double value = score.score + score.liveScore * 1e-7;
+    deckCalculator.forEachDeckState(
+        deckCards,
+        supportCards,
+        [&](const DeckStateView& state) {
+            DeckScoreDetail scoreDetail{
+                .power = state.power.total,
+                .eventBonus = state.eventBonus.totalBonus,
+                .supportDeckBonus = state.supportDeckBonus,
+                .cardCount = 5,
+                .multiLiveScoreUp = state.multiLiveScoreUp,
+            };
+            for (int pos = 0; pos < 5; ++pos)
+                scoreDetail.skillScoreUps[pos] = state.skills[state.order[pos]].scoreUp;
 
-        ret.maxTargetValue = std::max(ret.maxTargetValue, value);
-        ret.maxMultiLiveScoreUp = std::max(ret.maxMultiLiveScoreUp, deckDetail.multiLiveScoreUp);
-        
-        // 最低实效限制
-        if (deckDetail.multiLiveScoreUp < config.multiScoreUpLowerBound)
-            continue;
-        
-        if (value > maxValue) {
-            maxValue = value;
-            ret.bestDeck = RecommendDeck(deckDetail, config.target, score);
-        }
-    }
+            auto score = scoreFunc(scoreDetail);
+            double value = score.score + score.liveScore * 1e-7;
+
+            ret.maxTargetValue = std::max(ret.maxTargetValue, value);
+            ret.maxMultiLiveScoreUp = std::max(ret.maxMultiLiveScoreUp, state.multiLiveScoreUp);
+
+            if (state.multiLiveScoreUp < config.multiScoreUpLowerBound)
+                return;
+
+            if (value > maxValue) {
+                maxValue = value;
+                RecommendCandidate candidate{
+                    .score = score,
+                    .multiLiveScoreUp = state.multiLiveScoreUp,
+                    .power = state.power.total.total,
+                    .leaderCardId = state.cardDetails[state.order[0]]->cardId,
+                    .statusMask = state.statusMask,
+                };
+                if (config.target == RecommendTarget::Mysekai) {
+                    candidate.targetValue = score.mysekaiInternalPoint;
+                    candidate.resultScore = 0;
+                }
+                else {
+                    candidate.resultScore = score.score;
+                    if (config.target == RecommendTarget::Power)
+                        candidate.targetValue = candidate.power + double(score.score) / SCORE_MAX;
+                    else if (config.target == RecommendTarget::Skill)
+                        candidate.targetValue = state.multiLiveScoreUp + double(score.score) / SCORE_MAX;
+                    else
+                        candidate.targetValue = score.score + double(score.liveScore) / SCORE_MAX;
+                }
+                ret.bestCandidate = candidate;
+            }
+        },
+        honorBonus,
+        eventType,
+        eventId,
+        config.skillReferenceChooseStrategy,
+        config.keepAfterTrainingState,
+        bestSkillAsLeader
+    );
     return ret;
+}
+
+RecommendDeck BaseDeckRecommend::materializeCandidate(
+    DeckCalculator& deckCalculator,
+    const std::vector<const CardDetail*>& deckCards,
+    std::map<int, std::vector<SupportDeckCard>>& supportCards,
+    int honorBonus,
+    std::optional<int> eventType,
+    std::optional<int> eventId,
+    const DeckRecommendConfig& config,
+    const RecommendCandidate& candidate
+) const {
+    bool bestSkillAsLeader = config.bestSkillAsLeader;
+    if (config.fixedCharacters.size()) bestSkillAsLeader = false;
+    if (eventId.has_value() && eventId.value() == finalChapterEventId) bestSkillAsLeader = false;
+
+    auto deckDetails = deckCalculator.getDeckDetailByCards(
+        deckCards,
+        supportCards,
+        honorBonus,
+        eventType,
+        eventId,
+        config.skillReferenceChooseStrategy,
+        config.keepAfterTrainingState,
+        bestSkillAsLeader,
+        candidate.statusMask
+    );
+    return RecommendDeck(deckDetails.front(), config.target, candidate.score);
 }
 
 
@@ -203,7 +264,7 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
     std::vector<RecommendDeck> ans{};
     std::vector<CardDetail> cardDetails{};
     std::vector<CardDetail> preCardDetails{};
-    auto sf = [&scoreFunc, &musicMeta](const DeckDetail& deckDetail) { return scoreFunc(musicMeta, deckDetail); };
+    auto sf = [&scoreFunc, &musicMeta](const DeckScoreDetail& deckDetail) { return scoreFunc(musicMeta, deckDetail); };
 
     RecommendCalcInfo calcInfo{};
     calcInfo.start_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();

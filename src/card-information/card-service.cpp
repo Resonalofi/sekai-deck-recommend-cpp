@@ -26,8 +26,8 @@ UserCard CardService::applyCardConfig(const UserCard &userCard, const Card &card
     if (!rankMax && !episodeRead && !masterMax && !skillMax) 
         return userCard;
 
-    auto cardRarities = dataProvider.masterData->cardRarities;
-    auto cardRarity = findOrThrow(cardRarities, [&](const CardRarity& it) {
+    auto& cardRarities = dataProvider.masterData->cardRarities;
+    const auto& cardRarity = findOrThrow(cardRarities, [&](const CardRarity& it) {
         return it.cardRarityType == card.cardRarityType;
     }, [&]() { return "Card rarity not found for cardRarityType=" + std::to_string(card.cardRarityType); });
 

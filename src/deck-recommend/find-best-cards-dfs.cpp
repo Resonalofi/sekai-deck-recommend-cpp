@@ -16,7 +16,7 @@ void BaseDeckRecommend::findBestCardsDFS(
     const DeckRecommendConfig& cfg,
     const std::vector<CardDetail> &cardDetails, 
     std::map<int, std::vector<SupportDeckCard>>& supportCards,
-    const std::function<Score(const DeckDetail &)> &scoreFunc, 
+    const std::function<Score(const DeckScoreDetail &)> &scoreFunc,
     RecommendCalcInfo& dfsInfo,
     int limit, 
     bool isChallengeLive, 
@@ -41,13 +41,53 @@ void BaseDeckRecommend::findBestCardsDFS(
     }
     // 已经是完整卡组，计算当前卡组的值
     if (int(deckCards.size()) == member) {
+        if (cfg.target == RecommendTarget::Power && int(dfsInfo.deckQueue.size()) >= limit) {
+            auto power = this->deckCalculator.getDeckPowerByCards(deckCards, honorBonus).total.total;
+            if (power < dfsInfo.deckQueue.top().power.total) {
+                return;
+            }
+        }
         auto ret = getBestPermutation(
             this->deckCalculator, deckCards, supportCards, scoreFunc, 
             honorBonus, eventType, eventId, liveType, cfg
         );
-        if (ret.bestDeck.has_value())
-            dfsInfo.update(ret.bestDeck.value(), limit);
+        if (ret.bestCandidate.has_value() && dfsInfo.wouldUpdate(ret.bestCandidate.value(), limit)) {
+            dfsInfo.update(materializeCandidate(
+                this->deckCalculator, deckCards, supportCards,
+                honorBonus, eventType, eventId, cfg, ret.bestCandidate.value()
+            ), limit);
+        }
         return;
+    }
+
+    if (cfg.target == RecommendTarget::Power && int(dfsInfo.deckQueue.size()) >= limit) {
+        int remaining = member - static_cast<int>(deckCards.size());
+        int maxPower = honorBonus;
+        for (const auto* card : deckCards)
+            maxPower += card->power.max;
+
+        auto availableCharacters = deckCharacters;
+        for (const auto& card : cardDetails) {
+            if (remaining == 0)
+                break;
+            if (isChallengeLive) {
+                bool selected = std::any_of(deckCards.begin(), deckCards.end(), [&](const auto* deckCard) {
+                    return deckCard->cardId == card.cardId;
+                });
+                if (selected)
+                    continue;
+            }
+            else if (availableCharacters.test(card.characterId)) {
+                continue;
+            }
+
+            maxPower += card.power.max;
+            availableCharacters.set(card.characterId);
+            --remaining;
+        }
+        if (remaining > 0 || maxPower < dfsInfo.deckQueue.top().power.total) {
+            return;
+        }
     }
 
     // 非完整卡组，继续遍历所有情况

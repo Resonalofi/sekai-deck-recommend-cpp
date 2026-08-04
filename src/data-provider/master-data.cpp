@@ -3,8 +3,142 @@
 
 #include <fstream>
 #include <iostream>
+#include <exception>
+#include <limits>
+#include <unordered_set>
 #include <vector>
 #include "master-data.h"
+
+
+namespace {
+
+class CardJsonSax final : public nlohmann::json_sax<json> {
+    struct Frame {
+        json value;
+        std::string key;
+        bool keep;
+        bool object;
+    };
+
+    static const std::unordered_set<std::string> keptKeys;
+
+    std::vector<Frame> frames;
+    std::vector<Card> cards;
+    bool rootArrayStarted = false;
+    std::exception_ptr conversionError;
+
+    bool keepNextValue() const {
+        if (frames.empty())
+            return true;
+        const auto& parent = frames.back();
+        return parent.keep && (!parent.object || keptKeys.contains(parent.key));
+    }
+
+    void finishValue(json value, bool keep) {
+        if (frames.empty()) {
+            if (keep && conversionError == nullptr) {
+                try {
+                    cards.push_back(Card::fromJson(value));
+                }
+                catch (...) {
+                    conversionError = std::current_exception();
+                }
+            }
+            return;
+        }
+
+        auto& parent = frames.back();
+        if (keep) {
+            if (parent.object)
+                parent.value[parent.key] = std::move(value);
+            else
+                parent.value.push_back(std::move(value));
+        }
+        if (parent.object)
+            parent.key.clear();
+    }
+
+    bool primitive(json value) {
+        const bool keep = keepNextValue();
+        finishValue(std::move(value), keep);
+        return true;
+    }
+
+    bool startContainer(bool object, std::size_t elements) {
+        if (!rootArrayStarted && frames.empty() && !object) {
+            rootArrayStarted = true;
+            if (elements != std::numeric_limits<std::size_t>::max())
+                cards.reserve(elements);
+            return true;
+        }
+
+        const bool keep = keepNextValue();
+        json value = object ? json::object() : json::array();
+        if (keep && elements != std::numeric_limits<std::size_t>::max()) {
+            if (object)
+                value.get_ref<json::object_t&>().clear();
+            else
+                value.get_ref<json::array_t&>().reserve(elements);
+        }
+        frames.push_back({std::move(value), {}, keep, object});
+        return true;
+    }
+
+    bool endContainer(bool object) {
+        if (frames.empty())
+            return !object && rootArrayStarted;
+        Frame frame = std::move(frames.back());
+        frames.pop_back();
+        finishValue(std::move(frame.value), frame.keep);
+        return true;
+    }
+
+public:
+    bool null() override { return primitive(nullptr); }
+    bool boolean(bool value) override { return primitive(value); }
+    bool number_integer(number_integer_t value) override { return primitive(value); }
+    bool number_unsigned(number_unsigned_t value) override { return primitive(value); }
+    bool number_float(number_float_t value, const string_t&) override { return primitive(value); }
+    bool string(string_t& value) override { return primitive(std::move(value)); }
+    bool binary(binary_t& value) override { return primitive(std::move(value)); }
+    bool start_object(std::size_t elements) override { return startContainer(true, elements); }
+    bool key(string_t& value) override {
+        frames.back().key = std::move(value);
+        return true;
+    }
+    bool end_object() override { return endContainer(true); }
+    bool start_array(std::size_t elements) override { return startContainer(false, elements); }
+    bool end_array() override { return endContainer(false); }
+    bool parse_error(std::size_t, const std::string&, const nlohmann::detail::exception&) override { return false; }
+
+    std::vector<Card> takeCards() { return std::move(cards); }
+    bool hasRootArray() const { return rootArrayStarted; }
+    void rethrowConversionError() const {
+        if (conversionError != nullptr)
+            std::rethrow_exception(conversionError);
+    }
+};
+
+const std::unordered_set<std::string> CardJsonSax::keptKeys = {
+    "id", "seq", "characterId", "cardRarityType",
+    "specialTrainingPower1BonusFixed", "specialTrainingPower2BonusFixed",
+    "specialTrainingPower3BonusFixed", "attr", "supportUnit", "skillId",
+    "specialTrainingSkillId", "cardParameters", "cardLevel",
+    "cardParameterType", "power", "param1", "param2", "param3",
+};
+
+std::vector<Card> loadCardsFromString(const std::string& input) {
+    CardJsonSax sax;
+    if (!json::sax_parse(input, &sax))
+        return Card::fromJsonList(json::parse(input));
+
+    if (!sax.hasRootArray())
+        return Card::fromJsonList(json::parse(input));
+    sax.rethrowConversionError();
+    return sax.takeCards();
+}
+
+}
 
 
 const std::vector<std::string> requiredMasterDataKeys = {
@@ -61,21 +195,6 @@ void loadMasterDataJsonFromFile(std::map<std::string, json>& jsons, const std::s
         throw std::runtime_error("Failed to load master data from file: " + key + ", error: " + e.what());
     }
 }
-
-void loadMasterDataJsonFromStrings(std::map<std::string, json>& jsons, std::map<std::string, std::string>& data, const std::string& key) {
-    try {
-        if (!data.count(key)) {
-            jsons.erase(key);
-            return;
-        }
-        json j = json::parse(data.at(key));
-        jsons[key] = j;
-    }
-    catch (const std::exception& e) {
-        throw std::runtime_error("Failed to load master data from string: " + key + ", error: " + e.what());
-    }
-}
-
 
 void addFinalChapterEventIfNeeded(MasterData& md) {
     bool hasFinalChapter = false;
@@ -144,6 +263,32 @@ std::vector<T> loadMasterData(std::map<std::string, json>& jsons, const std::str
     return T::fromJsonList(jsons.at(key));
 }
 
+template <typename T>
+std::vector<T> loadMasterDataFromString(
+    std::map<std::string, std::string>& data,
+    const std::string& key,
+    bool required = true
+) {
+    auto it = data.find(key);
+    if (it == data.end()) {
+        if (required)
+            throw std::runtime_error("master data key not found: " + key);
+        std::cerr << "[sekai-deck-recommend-cpp] warning: master data key not found: " + key << std::endl;
+        return {};
+    }
+
+    json parsed;
+    try {
+        parsed = json::parse(it->second);
+    }
+    catch (const std::exception& e) {
+        throw std::runtime_error("Failed to load master data from string: " + key + ", error: " + e.what());
+    }
+    data.erase(it);
+    auto result = T::fromJsonList(parsed);
+    return result;
+}
+
 void MasterData::loadFromJsons(std::map<std::string, json>& jsons) {
     this->areaItemLevels = loadMasterData<AreaItemLevel>(jsons, "areaItemLevels");
     this->areaItems = loadMasterData<AreaItem>(jsons, "areaItems");
@@ -177,6 +322,10 @@ void MasterData::loadFromJsons(std::map<std::string, json>& jsons) {
     this->mysekaiGates = loadMasterData<MysekaiGate>(jsons, "mysekaiGates", false);
     this->mysekaiGateLevels = loadMasterData<MysekaiGateLevel>(jsons, "mysekaiGateLevels", false);
 
+    finishLoad();
+}
+
+void MasterData::finishLoad() {
     std::map<std::string, json> tmp{};
     loadMasterDataJsonFromFile(tmp, getStaticDataDir(), "worldBloomSupportDeckBonusesWL1");
     loadMasterDataJsonFromFile(tmp, getStaticDataDir(), "worldBloomSupportDeckBonusesWL2");
@@ -201,12 +350,58 @@ void MasterData::loadFromFiles(const std::string& baseDir) {
 
 void MasterData::loadFromStrings(std::map<std::string, std::string>& data) {
     this->baseDir.clear();
-    std::map<std::string, json> jsons;
-    for (const auto& key : requiredMasterDataKeys) 
-        loadMasterDataJsonFromStrings(jsons, data, key);
-    for (const auto& key : notRequiredMasterDataKeys)
-        loadMasterDataJsonFromStrings(jsons, data, key);
-    loadFromJsons(jsons);
+    this->areaItemLevels = loadMasterDataFromString<AreaItemLevel>(data, "areaItemLevels");
+    this->areaItems = loadMasterDataFromString<AreaItem>(data, "areaItems");
+    this->areas = loadMasterDataFromString<Area>(data, "areas");
+    this->cardEpisodes = loadMasterDataFromString<CardEpisode>(data, "cardEpisodes");
+    auto cardsData = data.find("cards");
+    if (cardsData == data.end())
+        throw std::runtime_error("master data key not found: cards");
+    try {
+        this->cards = loadCardsFromString(cardsData->second);
+    }
+    catch (const json::parse_error& e) {
+        throw std::runtime_error("Failed to load master data from string: cards, error: " + std::string(e.what()));
+    }
+    data.erase(cardsData);
+    this->cardRarities = loadMasterDataFromString<CardRarity>(data, "cardRarities");
+    this->characterRanks = loadMasterDataFromString<CharacterRank>(data, "characterRanks");
+    this->eventCards = loadMasterDataFromString<EventCard>(data, "eventCards");
+    this->eventDeckBonuses = loadMasterDataFromString<EventDeckBonus>(data, "eventDeckBonuses");
+    this->eventExchangeSummaries = loadMasterDataFromString<EventExchangeSummary>(data, "eventExchangeSummaries");
+    this->events = loadMasterDataFromString<Event>(data, "events");
+    this->eventItems = loadMasterDataFromString<EventItem>(data, "eventItems");
+    this->eventRarityBonusRates = loadMasterDataFromString<EventRarityBonusRate>(data, "eventRarityBonusRates");
+    this->gameCharacters = loadMasterDataFromString<GameCharacter>(data, "gameCharacters");
+    this->gameCharacterUnits = loadMasterDataFromString<GameCharacterUnit>(data, "gameCharacterUnits");
+    this->honors = loadMasterDataFromString<Honor>(data, "honors");
+    this->masterLessons = loadMasterDataFromString<MasterLesson>(data, "masterLessons");
+    this->musicDifficulties = loadMasterDataFromString<MusicDifficulty>(data, "musicDifficulties");
+    this->musics = loadMasterDataFromString<Music>(data, "musics");
+    this->musicVocals = loadMasterDataFromString<MusicVocal>(data, "musicVocals");
+    this->shopItems = loadMasterDataFromString<ShopItem>(data, "shopItems");
+    this->skills = loadMasterDataFromString<Skill>(data, "skills");
+    this->worldBloomDifferentAttributeBonuses = loadMasterDataFromString<WorldBloomDifferentAttributeBonus>(data, "worldBloomDifferentAttributeBonuses");
+    this->worldBlooms = loadMasterDataFromString<WorldBloom>(data, "worldBlooms");
+    auto supportDeckBonuses = data.find("worldBloomSupportDeckBonuses");
+    if (supportDeckBonuses == data.end())
+        throw std::runtime_error("master data key not found: worldBloomSupportDeckBonuses");
+    try {
+        [[maybe_unused]] auto parsed = json::parse(supportDeckBonuses->second);
+    }
+    catch (const std::exception& e) {
+        throw std::runtime_error("Failed to load master data from string: worldBloomSupportDeckBonuses, error: " + std::string(e.what()));
+    }
+    data.erase(supportDeckBonuses);
+
+    this->worldBloomSupportDeckUnitEventLimitedBonuses = loadMasterDataFromString<WorldBloomSupportDeckUnitEventLimitedBonus>(data, "worldBloomSupportDeckUnitEventLimitedBonuses", false);
+    this->cardMysekaiCanvasBonuses = loadMasterDataFromString<CardMysekaiCanvasBonus>(data, "cardMysekaiCanvasBonuses", false);
+    this->mysekaiFixtureGameCharacterGroups = loadMasterDataFromString<MysekaiFixtureGameCharacterGroup>(data, "mysekaiFixtureGameCharacterGroups", false);
+    this->mysekaiFixtureGameCharacterGroupPerformanceBonuses = loadMasterDataFromString<MysekaiFixtureGameCharacterGroupPerformanceBonus>(data, "mysekaiFixtureGameCharacterGroupPerformanceBonuses", false);
+    this->mysekaiGates = loadMasterDataFromString<MysekaiGate>(data, "mysekaiGates", false);
+    this->mysekaiGateLevels = loadMasterDataFromString<MysekaiGateLevel>(data, "mysekaiGateLevels", false);
+
+    finishLoad();
 }
 
 
@@ -339,5 +534,3 @@ int MasterData::getWorldBloomEventTurn(int eventId) const
     else 
         return eventId <= 140 ? 1 : 2;  // 140之前为第一轮
 }
-
-

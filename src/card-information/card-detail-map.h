@@ -1,9 +1,13 @@
 #ifndef CARD_DETAIL_MAP_H
 #define CARD_DETAIL_MAP_H
 
-#include <optional>
-#include <string>
-#include <map>
+#include <algorithm>
+#include <array>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <stdexcept>
 
 #include "common/collection-utils.h"
 
@@ -14,18 +18,22 @@ constexpr int ATTR_MEMBER_MAX = 2;
 /**
  * 用于记录在不同的同组合、同属性加成的情况下的综合力或加分技能
  */
-template <typename T>
+template <typename T, std::size_t Capacity>
 class CardDetailMap {
+    static_assert(Capacity <= std::numeric_limits<uint8_t>::max());
 
-    inline const std::optional<T> getValue(int unit, int unitMember, int attrMember) const {
-        int key = getKey(unit, unitMember, attrMember);
-        if (this->values[key].has_value())
-            return this->values[key];
-        return std::nullopt;
+    std::array<uint8_t, UNIT_MAX * UNIT_MEMBER_MAX * ATTR_MEMBER_MAX> indexes{};
+    std::array<T, Capacity> values{};
+    uint8_t size = 0;
+
+    inline int getKey(int unit, int unitMember, int attrMember) const {
+        assert(unit >= 0 && unit < UNIT_MAX);
+        assert(unitMember >= 0 && unitMember < UNIT_MEMBER_MAX);
+        assert(attrMember == 1 || attrMember == 5);
+        return (unit * UNIT_MEMBER_MAX + unitMember) * ATTR_MEMBER_MAX + (attrMember == 5 ? 1 : 0);
     }
 
 public:
-    std::array<std::optional<T>, UNIT_MAX * UNIT_MEMBER_MAX * ATTR_MEMBER_MAX> values = {};
     int min = std::numeric_limits<int>::max();
     int max = std::numeric_limits<int>::min();
     
@@ -41,7 +49,47 @@ public:
     inline void set(int unit, int unitMember, int attrMember, int cmpValue, const T& value) {
         this->min = std::min(this->min, cmpValue);
         this->max = std::max(this->max, cmpValue);
-        this->values[getKey(unit, unitMember, attrMember)] = value;
+        auto key = getKey(unit, unitMember, attrMember);
+        auto index = indexes[key];
+        if (index == 0) {
+            if (size == Capacity)
+                throw std::length_error("card detail map capacity exceeded");
+            index = ++size;
+            indexes[key] = index;
+        }
+        values[index - 1] = value;
+    }
+
+    /**
+     * 将查询时的回退规则预解析到索引表中。
+     * 必须在全部 set 完成后调用。
+     */
+    inline void finalize() {
+        const auto exactIndexes = indexes;
+        for (int unit = 0; unit < UNIT_MAX; ++unit) {
+            for (int unitMember = 0; unitMember < UNIT_MEMBER_MAX; ++unitMember) {
+                for (int attrMember : {1, 5}) {
+                    uint8_t index = 0;
+
+                    if (unit == Enums::Unit::diff)
+                        index = exactIndexes[getKey(Enums::Unit::diff, std::min(2, unitMember), 1)];
+
+                    if (index == 0 && unit == Enums::Unit::ref)
+                        index = exactIndexes[getKey(Enums::Unit::ref, 1, 1)];
+
+                    if (index == 0)
+                        index = exactIndexes[getKey(unit, unitMember, attrMember)];
+
+                    if (index == 0)
+                        index = exactIndexes[getKey(unit, unitMember == 5 ? 5 : 1, attrMember)];
+
+                    if (index == 0)
+                        index = exactIndexes[getKey(Enums::Unit::any, 1, 1)];
+
+                    indexes[getKey(unit, unitMember, attrMember)] = index;
+                }
+            }
+        }
     }
 
     /**
@@ -52,50 +100,11 @@ public:
      * @param attrMember 卡牌属性对应的人数（真实值）
      */
     inline T get(int unit, int unitMember, int attrMember) const {
-        // 所有情况下，属性实际只有混不混的区别
         attrMember = (attrMember == 5 ? 5 : 1);
-        std::optional<T> best{};
-
-        // (vsbf花前) 不同组数只能是0-2
-        if (unit == Enums::Unit::diff) {
-            best = this->getValue(Enums::Unit::diff, std::min(2, unitMember), 1);
-            if (best.has_value()) return best.value();
-        }
-
-        // (ocbf花前) 这边unit其实是当作技能tag用
-        if (unit == Enums::Unit::ref) {
-            best = this->getValue(Enums::Unit::ref, 1, 1);
-            if (best.has_value()) return best.value();
-        }
-
-        // (组分) 受指定组合人数影响的情况 
-        best = this->getValue(unit, unitMember, attrMember);  
-        if (best.has_value()) return best.value();
-
-        // (综合力计算) 只考虑混不混组的情况
-        best = this->getValue(unit, unitMember == 5 ? 5 : 1, attrMember);
-        if (best.has_value()) return best.value();
-
-        // 技能为固定数值的情况（能够变化但取到保底固定数值的也会落到这里）
-        best = this->getValue(Enums::Unit::any, 1, 1);
-        if (best.has_value()) return best.value();
-
-        // 如果这还找不到，说明给的情况就不对
-        throw std::runtime_error("case not found");
-    }
-
-    /**
-     * 实际用于Map的key，用于内部调用避免创建对象的开销
-     * @param unit 组合
-     * @param unitMember 组合人数
-     * @param attrMember 属性人数
-     * @private
-     */
-    inline int getKey(int unit, int unitMember, int attrMember) const {
-        assert(unit >= 0 && unit < 12);
-        assert(unitMember >= 0 && unitMember <= 5);
-        assert(attrMember == 1 || attrMember == 5);
-        return (unit * UNIT_MEMBER_MAX + unitMember) * ATTR_MEMBER_MAX + (attrMember == 5 ? 1 : 0);
+        auto index = indexes[getKey(unit, unitMember, attrMember)];
+        if (index == 0)
+            throw std::runtime_error("case not found");
+        return values[index - 1];
     }
 
     /**
@@ -103,10 +112,9 @@ public:
      * 如果几个维度都比其他小，这张卡可以在自动组卡时舍去
      * @param another 另一个范围
      */
-    inline bool isCertainlyLessThan(const CardDetailMap<T>& another) const {
+    inline bool isCertainlyLessThan(const CardDetailMap& another) const {
         return this->max < another.min;
     }
 };
 
 #endif // CARD_DETAIL_MAP_H
-

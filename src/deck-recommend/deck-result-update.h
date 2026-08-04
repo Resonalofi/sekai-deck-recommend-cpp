@@ -64,6 +64,16 @@ struct RecommendDeck : DeckDetail {
     bool operator>(const RecommendDeck &other) const;
 };
 
+struct RecommendCandidate {
+    Score score{};
+    double targetValue = 0;
+    double multiLiveScoreUp = 0;
+    int power = 0;
+    int leaderCardId = 0;
+    int statusMask = 0;
+    int resultScore = 0;
+};
+
 
 // 存储卡组推荐计算的结果以及过程中需要记录的信息
 struct RecommendCalcInfo {
@@ -80,6 +90,8 @@ struct RecommendCalcInfo {
 
     // 添加一个新结果
     void update(const RecommendDeck &deck, int limit);
+
+    bool wouldUpdate(const RecommendCandidate& candidate, int limit) const;
 
     // 检查是否超时
     bool isTimeout();

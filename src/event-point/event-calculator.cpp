@@ -68,6 +68,41 @@ Score EventCalculator::getDeckScoreAndEventPoint(
     return ret;
 }
 
+Score EventCalculator::getDeckScoreAndEventPoint(
+    const DeckScoreDetail& deckDetail,
+    const MusicMeta& musicMeta,
+    int liveType,
+    int eventType,
+    LiveSkillOrder liveSkillOrder,
+    std::optional<std::vector<int>> specificSkillOrder,
+    std::optional<int> multiTeammateScoreUp,
+    std::optional<int> multiTeammatePower
+)
+{
+    auto deckBonus = deckDetail.eventBonus;
+    if (!Enums::LiveType::isChallenge(liveType) && !deckBonus.has_value())
+        throw std::runtime_error("Deck bonus is undefined");
+
+    auto supportDeckBonus = deckDetail.supportDeckBonus;
+    if (eventType == Enums::EventType::world_bloom && !supportDeckBonus.has_value())
+        throw std::runtime_error("Support deck bonus is undefined");
+
+    auto liveScore = this->liveCalculator.getLiveScoreByDeck(
+        deckDetail, musicMeta, liveType,
+        liveSkillOrder, specificSkillOrder,
+        multiTeammateScoreUp, multiTeammatePower
+    );
+    auto eventPoint = this->getEventPoint(
+        liveType, eventType, liveScore, musicMeta.event_rate,
+        deckBonus.value_or(0) + supportDeckBonus.value_or(0)
+    );
+
+    Score ret{};
+    ret.score = eventPoint;
+    ret.liveScore = liveScore;
+    return ret;
+}
+
 ScoreFunction EventCalculator::getEventPointFunction(
     int liveType, 
     int eventType,
@@ -78,7 +113,7 @@ ScoreFunction EventCalculator::getEventPointFunction(
 )
 {
     return [this, liveType, eventType, liveSkillOrder, specificSkillOrder, multiTeammateScoreUp, multiTeammatePower]
-        (const MusicMeta &musicMeta, const DeckDetail &deckDetail) {
+        (const MusicMeta &musicMeta, const DeckScoreDetail &deckDetail) {
         return this->getDeckScoreAndEventPoint(
             deckDetail, musicMeta, liveType, eventType,
             liveSkillOrder, specificSkillOrder,

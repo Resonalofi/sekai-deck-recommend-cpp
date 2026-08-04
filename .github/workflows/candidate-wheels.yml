@@ -1,0 +1,23 @@
+name: Build candidate wheels
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/build-wheels.yml"
+      - ".github/workflows/candidate-wheels.yml"
+      - "3rdparty/**"
+      - "data/**"
+      - "src/**"
+      - "CMakeLists.txt"
+      - "pyproject.toml"
+      - "tests/wheel_smoke.py"
+  workflow_dispatch:
+
+jobs:
+  build_wheels:
+    name: Build CPython 3.12 candidate wheels
+    uses: ./.github/workflows/build-wheels.yml
+    with:
+      python_build: "cp312"
+      include_musllinux: false
+      include_windows_arm64: true

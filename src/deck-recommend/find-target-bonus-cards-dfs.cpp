@@ -134,7 +134,7 @@ void BaseDeckRecommend::findTargetBonusCardsDFS(
     int liveType, 
     const DeckRecommendConfig &config, 
     const std::vector<CardDetail> &cardDetails, 
-    const std::function<Score(const DeckDetail &)> &scoreFunc, 
+    const std::function<Score(const DeckScoreDetail &)> &scoreFunc,
     RecommendCalcInfo &dfsInfo, 
     int limit, 
     int member, 
@@ -194,10 +194,14 @@ void BaseDeckRecommend::findTargetBonusCardsDFS(
                 for (auto key : resultKeys) 
                     deckCards.push_back(bonusCharaCards[key].front()); 
                 // 计算卡组详情
-                auto deckRes = getBestPermutation(
+                auto candidate = getBestPermutation(
                     deckCalculator, deckCards, emptySupportCards, scoreFunc,
                     0, eventType, eventId, liveType, config
-                ).bestDeck.value();
+                ).bestCandidate.value();
+                auto deckRes = materializeCandidate(
+                    deckCalculator, deckCards, emptySupportCards,
+                    0, eventType, eventId, config, candidate
+                );
                 // 需要验证加成正确
                 if(std::abs(deckRes.eventBonus.value_or(0) * 2 - bonus) < 1e-6)
                     dfsInfo.update(deckRes, 1e9);

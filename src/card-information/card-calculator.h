@@ -25,8 +25,8 @@ struct CardDetail {
     int characterId;
     std::vector<int> units;
     int attr;
-    CardDetailMap<DeckCardPowerDetail> power;
-    CardDetailMap<DeckCardSkillDetail> skill;
+    CardPowerDetailMap power;
+    CardSkillDetailMap skill;
     std::optional<double> maxEventBonus;    // 最大活动加成
     std::optional<double> minEventBonus;    // 最小活动加成，用于终章计算
     std::optional<double> limitedEventBonus; // 当期活动加成，用于终章计算

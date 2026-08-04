@@ -19,9 +19,25 @@ Score MysekaiEventCalculator::getDeckMysekaiEventPoint(const DeckDetail &deckDet
     return ret;
 }
 
+Score MysekaiEventCalculator::getDeckMysekaiEventPoint(const DeckScoreDetail& deckDetail)
+{
+    int power = deckDetail.power.total;
+    double event_bonus = deckDetail.eventBonus.value_or(0) + deckDetail.supportDeckBonus.value_or(0);
+
+    double power_bonus = 1 + (power / 450000.0);
+    power_bonus = std::floor(power_bonus * 10 + 1e-6) / 10.0;
+
+    event_bonus = std::floor(event_bonus + 1e-6) / 100.0;
+
+    Score ret;
+    ret.mysekaiEventPoint = std::floor(power_bonus * (1 + event_bonus) + 1e-6) * 500;
+    ret.mysekaiInternalPoint = power_bonus * (1 + event_bonus) * 500;
+    return ret;
+}
+
 ScoreFunction MysekaiEventCalculator::getMysekaiEventPointFunction()
 {
-    return [this] (const MusicMeta &musicMeta, const DeckDetail &deckDetail) {
+    return [this] (const MusicMeta &musicMeta, const DeckScoreDetail &deckDetail) {
         return this->getDeckMysekaiEventPoint(deckDetail);
     };
 }

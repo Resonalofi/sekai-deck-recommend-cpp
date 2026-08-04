@@ -28,6 +28,9 @@ struct DeckCardPowerDetail {
         return os;
     }
 };
+
+// A card has at most two units, each with four unit/attribute states.
+using CardPowerDetailMap = CardDetailMap<DeckCardPowerDetail, 8>;
   
 class CardPowerCalculator {
 
@@ -46,7 +49,7 @@ public:
      * @param hasCanvasBonus 是否拥有自定义世界中的画布
      * @param userGateBonuses 用户拥有的自定义世界大门加成
      */
-    CardDetailMap<DeckCardPowerDetail> getCardPower(
+    CardPowerDetailMap getCardPower(
         const UserCard& userCard,
         const Card& card,
         const std::vector<int>& cardUnits,

@@ -1,6 +1,6 @@
 #include "card-information/card-power-calculator.h"
 
-CardDetailMap<DeckCardPowerDetail> CardPowerCalculator::getCardPower(
+CardPowerDetailMap CardPowerCalculator::getCardPower(
     const UserCard &userCard, 
     const Card &card, 
     const std::vector<int> &cardUnits, 
@@ -10,7 +10,7 @@ CardDetailMap<DeckCardPowerDetail> CardPowerCalculator::getCardPower(
     std::optional<int> fixtureBonusLimit
 )
 {
-    auto ret = CardDetailMap<DeckCardPowerDetail>();
+    auto ret = CardPowerDetailMap();
     BasePower basePower = getBasePower(userCard, card, hasCanvasBonus);
     int characterBonus = getCharacterBonusPower(basePower, card.characterId);
     int fixtureBonus = getFixtureBonusPower(basePower, card.characterId, fixtureBonusLimit);
@@ -29,6 +29,7 @@ CardDetailMap<DeckCardPowerDetail> CardPowerCalculator::getCardPower(
         power = getPower(card, basePower, characterBonus, fixtureBonus, gateBonus, userAreaItemLevels, unit, false, false);
         ret.set(unit, 1, 1, power.total, power);
     }
+    ret.finalize();
     return ret;
 }
 
@@ -54,16 +55,8 @@ BasePower CardPowerCalculator::getBasePower(const UserCard &userCard, const Card
 
     BasePower ret = {0, 0, 0};
     // 等级
-    for (auto& it : card.cardParameters) {
-        if (it.cardLevel == userCard.level) {
-            if (it.cardParameterType == Enums::CardParameterType::param1)
-                ret[0] = it.power;
-            else if (it.cardParameterType == Enums::CardParameterType::param2)
-                ret[1] = it.power;
-            else if (it.cardParameterType == Enums::CardParameterType::param3)
-                ret[2] = it.power;
-        }
-    }
+    if (userCard.level > 0 && userCard.level <= static_cast<int>(card.levelPowers.size()))
+        ret = card.levelPowers[userCard.level - 1];
     // 觉醒
     if (userCard.specialTrainingStatus == Enums::SpecialTrainingStatus::done) {
         ret[0] += card.specialTrainingPower1BonusFixed;
@@ -73,7 +66,7 @@ BasePower CardPowerCalculator::getBasePower(const UserCard &userCard, const Card
     // 剧情
     for (auto& it : userCard.episodes) {
         if (it.scenarioStatus == Enums::ScenarioStatus::already_read) {
-            auto episode = findOrThrow(cardEpisodes, [&](auto& e) {
+            const auto& episode = findOrThrow(cardEpisodes, [&](auto& e) {
                 return e.id == it.cardEpisodeId;
             }, [&]() { return "Card episode not found for cardId=" + std::to_string(card.id) + " episodeId=" + std::to_string(it.cardEpisodeId); });
             ret[0] += episode.power1BonusFixed;
@@ -92,7 +85,7 @@ BasePower CardPowerCalculator::getBasePower(const UserCard &userCard, const Card
     // 从5.1.0版本开始，画布加成直接算进基础综合力中
     if (hasMysekaiCanvas) {
         auto& cardMysekaiCanvasBonuses = dataProvider.masterData->cardMysekaiCanvasBonuses;
-        auto canvasBonus = findOrThrow(cardMysekaiCanvasBonuses, [&](auto& it) {
+        const auto& canvasBonus = findOrThrow(cardMysekaiCanvasBonuses, [&](auto& it) {
             return it.cardRarityType == card.cardRarityType;
         }, [&]() { return "Card mysekai canvas bonus not found for cardRarityType=" + std::to_string(card.cardRarityType); });
         ret[0] += canvasBonus.power1BonusFixed;
@@ -139,10 +132,10 @@ int CardPowerCalculator::getCharacterBonusPower(const BasePower &basePower, int 
     auto& characterRanks = dataProvider.masterData->characterRanks;
     auto& userCharacters = dataProvider.userData->userCharacters;
 
-    auto userCharacter = findOrThrow(userCharacters, [&](auto& it) {
+    const auto& userCharacter = findOrThrow(userCharacters, [&](auto& it) {
         return it.characterId == characterId;
     }, [&]() { return "User character not found for characterId=" + std::to_string(characterId); });
-    auto characterRank = findOrThrow(characterRanks, [&](auto& it) {
+    const auto& characterRank = findOrThrow(characterRanks, [&](auto& it) {
         return it.characterId == userCharacter.characterId &&
                it.characterRank == userCharacter.characterRank;
     }, [&]() { return "Character rank not found for characterId=" + std::to_string(userCharacter.characterId) + " rank=" + std::to_string(userCharacter.characterRank); });

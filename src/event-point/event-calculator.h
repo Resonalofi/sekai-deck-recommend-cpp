@@ -61,6 +61,17 @@ public:
         std::optional<int> multiTeammatePower = std::nullopt
     );
 
+    Score getDeckScoreAndEventPoint(
+        const DeckScoreDetail& deckDetail,
+        const MusicMeta& musicMeta,
+        int liveType,
+        int eventType,
+        LiveSkillOrder liveSkillOrder,
+        std::optional<std::vector<int>> specificSkillOrder = std::nullopt,
+        std::optional<int> multiTeammateScoreUp = std::nullopt,
+        std::optional<int> multiTeammatePower = std::nullopt
+    );
+
     /**
      * 获取计算活动PT的函数
      * @param liveType Live类型

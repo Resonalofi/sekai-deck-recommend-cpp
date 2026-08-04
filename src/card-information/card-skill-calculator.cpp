@@ -1,7 +1,7 @@
 #include "card-information/card-skill-calculator.h"
 
 
-CardDetailMap<DeckCardSkillDetail> CardSkillCalculator::getCardSkill(
+CardSkillDetailMap CardSkillCalculator::getCardSkill(
     const UserCard &userCard, 
     const Card &card, 
     std::optional<double> scoreUpLimit
@@ -9,12 +9,15 @@ CardDetailMap<DeckCardSkillDetail> CardSkillCalculator::getCardSkill(
 {
     double limit = scoreUpLimit.value_or(std::numeric_limits<double>::max());
 
-    CardDetailMap<DeckCardSkillDetail> skillMap{};
-    std::vector<SkillDetail> details = { getSkillDetail(userCard, card, false) };
-    if (card.specialTrainingSkillId != 0) 
-        details.push_back(getSkillDetail(userCard, card, true));
+    CardSkillDetailMap skillMap{};
+    std::array<SkillDetail, 2> details{};
+    int detailCount = 1;
+    details[0] = getSkillDetail(userCard, card, false);
+    if (card.specialTrainingSkillId != 0)
+        details[detailCount++] = getSkillDetail(userCard, card, true);
 
-    for (auto& detail : details) {
+    for (int detailIndex = 0; detailIndex < detailCount; ++detailIndex) {
+        auto& detail = details[detailIndex];
         DeckCardSkillDetail deckDetail = {
             .skillId = detail.skillId,
             .isAfterTraining = detail.isAfterTraining,
@@ -61,13 +64,14 @@ CardDetailMap<DeckCardSkillDetail> CardSkillCalculator::getCardSkill(
             }
         }
     }
+    skillMap.finalize();
     return skillMap;
 }
 
 SkillDetail CardSkillCalculator::getSkillDetail(const UserCard &userCard, const Card &card, bool afterTraining)
 {
     SkillDetail ret = {};
-    auto skill = getSkill(userCard, card, afterTraining);
+    const auto& skill = getSkill(userCard, card, afterTraining);
     ret.skillId = skill.id;
     ret.isAfterTraining = afterTraining;
 
@@ -75,9 +79,13 @@ SkillDetail CardSkillCalculator::getSkillDetail(const UserCard &userCard, const 
     double characterRankBonus = 0;
     
     for (auto& skillEffect : skill.skillEffects) {
-        auto skillEffectDetail = findOrThrow(skillEffect.skillEffectDetails, [&](auto& it) {
+        const auto skillEffectDetailIt = std::find_if(skillEffect.skillEffectDetails.begin(), skillEffect.skillEffectDetails.end(), [&](const auto& it) {
             return it.level == userCard.skillLevel;
-        }, [&]() { return "Skill effect detail not found for skillEffectId=" + std::to_string(skillEffect.id) + " level=" + std::to_string(userCard.skillLevel); });
+        });
+        if (skillEffectDetailIt == skillEffect.skillEffectDetails.end()) {
+            throw ElementNoFoundError("Skill effect detail not found for skillEffectId=" + std::to_string(skillEffect.id) + " level=" + std::to_string(userCard.skillLevel));
+        }
+        const auto& skillEffectDetail = *skillEffectDetailIt;
         if (skillEffect.skillEffectType == Enums::SkillEffectType::score_up ||
             skillEffect.skillEffectType == Enums::SkillEffectType::score_up_condition_life ||
             skillEffect.skillEffectType == Enums::SkillEffectType::score_up_keep) {
@@ -120,14 +128,14 @@ SkillDetail CardSkillCalculator::getSkillDetail(const UserCard &userCard, const 
     return ret;
 }
 
-Skill CardSkillCalculator::getSkill(const UserCard &userCard, const Card &card, bool afterTraining)
+const Skill& CardSkillCalculator::getSkill(const UserCard &userCard, const Card &card, bool afterTraining)
 {
     int skillId = card.skillId;
     // 有觉醒后特殊技能且当前选择的是觉醒后
     if (card.specialTrainingSkillId != 0 && afterTraining) {
         skillId = card.specialTrainingSkillId;
     }
-    auto skills = dataProvider.masterData->skills;
+    auto& skills = dataProvider.masterData->skills;
     return findOrThrow(skills, [&](auto& it) {
         return it.id == skillId;
     }, [&]() { return "Skill not found for skillId=" + std::to_string(skillId); });
@@ -135,8 +143,8 @@ Skill CardSkillCalculator::getSkill(const UserCard &userCard, const Card &card, 
 
 int CardSkillCalculator::getCharacterRank(int characterId)
 {
-    auto userCharacters = dataProvider.userData->userCharacters;
-    auto userCharacter = findOrThrow(userCharacters, [&](auto& it) {
+    auto& userCharacters = dataProvider.userData->userCharacters;
+    const auto& userCharacter = findOrThrow(userCharacters, [&](auto& it) {
         return it.characterId == characterId;
     }, [&]() { return "User character not found for characterId=" + std::to_string(characterId); });
     return userCharacter.characterRank;
