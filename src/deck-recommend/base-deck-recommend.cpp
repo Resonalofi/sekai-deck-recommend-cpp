@@ -182,8 +182,8 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
     if (eventConfig.eventUnit && config.filterOtherUnit) {
         std::vector<CardDetail> newCards{};
         for (const auto& card : cards) {
-            if ((card.units.size() == 1 && card.units[0] == Enums::Unit::piapro) || 
-                std::find(card.units.begin(), card.units.end(), eventConfig.eventUnit) != card.units.end()) {
+            if (card.unitMask == (uint16_t{1} << Enums::Unit::piapro)
+                || (card.unitMask & (uint16_t{1} << eventConfig.eventUnit))) {
                 newCards.push_back(card);
             }
         }

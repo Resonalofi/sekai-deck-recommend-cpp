@@ -2,6 +2,7 @@
 #include "card-priority/bloom-event-card-priority.h"
 #include "card-priority/marathon-cheerful-event-card-priority.h"
 #include "card-priority/challenge-live-card-priority.h"
+#include <bit>
 
 
 bool checkAttrForBloomDfs(std::unordered_map<int, std::unordered_set<int>> &attrMap, std::unordered_map<int, int> &attrs, std::unordered_map<int, int> &chars, std::unordered_map<int, int> &visit, int round, int attr)
@@ -85,7 +86,8 @@ bool canMakeDeck(int liveType, int eventType, std::vector<CardDetail> &cardDetai
         attrMap[cardDetail.attr].insert(
             Enums::LiveType::isChallenge(liveType) ? cardDetail.cardId : cardDetail.characterId
         );
-        for (const auto &unit : cardDetail.units) {
+        for (auto units = cardDetail.unitMask; units; units &= units - 1) {
+            const auto unit = std::countr_zero(units);
             unitMap[unit].insert(cardDetail.characterId);
         }
     }

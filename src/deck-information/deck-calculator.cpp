@@ -1,6 +1,7 @@
 #include "deck-information/deck-calculator.h"
 #include "common/timer.h"
 #include "deck-calculator.h"
+#include <bit>
 
 
 DeckBonusInfo DeckCalculator::getDeckBonus(
@@ -115,13 +116,16 @@ DeckPowerCalculation DeckCalculator::getDeckPowerByCards(
     int attrMap[16] = {};
     for (const auto* card : cardDetails) {
         ++attrMap[card->attr];
-        for (const auto unit : card->units)
+        for (auto units = card->unitMask; units; units &= units - 1) {
+            const auto unit = std::countr_zero(units);
             ++result.unitCounts[unit];
+        }
     }
     for (size_t i = 0; i < cardDetails.size(); ++i) {
         const auto& card = *cardDetails[i];
         DeckCardPowerDetail power{};
-        for (const auto unit : card.units) {
+        for (auto units = card.unitMask; units; units &= units - 1) {
+            const auto unit = std::countr_zero(units);
             auto current = card.power.get(unit, result.unitCounts[unit], attrMap[card.attr]);
             if (current.total > power.total)
                 power = current;
@@ -144,19 +148,23 @@ int DeckCalculator::getDeckTotalPowerByCards(
     int honorBonus
 )
 {
-    int attrCounts[16] = {};
-    int unitCounts[16] = {};
+    const bool fullDeck = cardDetails.size() == 5;
+    uint16_t commonUnitMask = fullDeck ? (uint16_t{1} << UNIT_MAX) - 1 : 0;
+    const int deckAttr = fullDeck ? cardDetails[0]->attr : 0;
+    bool allSameAttr = fullDeck;
     for (const auto* card : cardDetails) {
-        ++attrCounts[card->attr];
-        for (const auto unit : card->units)
-            ++unitCounts[unit];
+        commonUnitMask &= card->unitMask;
+        allSameAttr &= card->attr == deckAttr;
     }
 
     int total = honorBonus;
     for (const auto* card : cardDetails) {
         int cardPower = 0;
-        for (const auto unit : card->units)
-            cardPower = std::max(cardPower, card->power.get(unit, unitCounts[unit], attrCounts[card->attr]).total);
+        for (auto units = card->unitMask; units; units &= units - 1) {
+            const auto unit = std::countr_zero(units);
+            const int unitMember = commonUnitMask & (uint16_t{1} << unit) ? 5 : 1;
+            cardPower = std::max(cardPower, card->power.get(unit, unitMember, allSameAttr ? 5 : 1).total);
+        }
         total += cardPower;
     }
     return total;
@@ -211,7 +219,8 @@ void DeckCalculator::forEachDeckState(
         // 获取普通技能效果（所有普通技能&bf花后）
         DeckCardSkillDetail s2 = {};
         // 组分技能效果（对vs有多个组合取最大）或 固定技能效果
-        for (const auto &unit : cardDetail.units) {
+        for (auto units = cardDetail.unitMask; units; units &= units - 1) {
+            const auto unit = std::countr_zero(units);
             auto current = cardDetail.skill.get(unit, powerCalculation.unitCounts[unit], 1);
             if (current.scoreUp > s2.scoreUp) s2 = current;
         }

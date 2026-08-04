@@ -83,11 +83,9 @@ void BaseDeckRecommend::findBestCardsDFS(
     // 非完整卡组，继续遍历所有情况
     const CardDetail* preCard = nullptr;
     auto cIndex = fixedCards.size() + cfg.fixedCharacters.size();
-    uint32_t leaderUnitMask = 0;
-    if (deckCards.size() >= cIndex + 1) {
-        for (const auto unit : deckCards[cIndex]->units)
-            leaderUnitMask |= uint32_t{1} << unit;
-    }
+    const uint16_t leaderUnitMask = deckCards.size() >= cIndex + 1
+        ? deckCards[cIndex]->unitMask
+        : 0;
 
     for (const auto& card : cardDetails) {
         if (isChallengeLive) {
@@ -108,13 +106,8 @@ void BaseDeckRecommend::findBestCardsDFS(
         // C位一定是技能最好的卡牌，跳过技能比C位还好的
         if (deckCards.size() >= cIndex + 1 && deckCards[cIndex]->skill.isCertainlyLessThan(card.skill)) continue;
         // 为了优化性能，必须和C位同色或同组
-        if (deckCards.size() >= cIndex + 1 && card.attr != deckCards[cIndex]->attr) {
-            bool sharesUnit = false;
-            for (const auto unit : card.units)
-                sharesUnit |= leaderUnitMask & (uint32_t{1} << unit);
-            if (!sharesUnit)
-                continue;
-        }
+        if (deckCards.size() >= cIndex + 1 && card.attr != deckCards[cIndex]->attr
+            && !(card.unitMask & leaderUnitMask)) continue;
 
         if (deckCards.size() >= cIndex + 2) {
             auto& last = *deckCards.back();

@@ -23,7 +23,7 @@ struct CardDetail {
     int masterRank;
     int cardRarityType;
     int characterId;
-    std::vector<int> units;
+    uint16_t unitMask;
     int attr;
     CardPowerDetailMap power;
     CardSkillDetailMap skill;

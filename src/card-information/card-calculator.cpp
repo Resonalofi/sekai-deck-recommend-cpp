@@ -44,6 +44,9 @@ std::optional<CardDetail> CardCalculator::getCardDetail(
 
     auto userCard0 = this->cardService.applyCardConfig(userCard, card, cfg);
     auto units = this->cardService.getCardUnits(card);
+    uint16_t unitMask = 0;
+    for (const auto unit : units)
+        unitMask |= uint16_t{1} << unit;
     auto skill = this->skillCalculator.getCardSkill(userCard0, card, scoreUpLimit);
     auto power = this->powerCalculator.getCardPower(
         userCard0, card, units, userAreaItemLevels, hasCanvasBonus, userGateBonuses,
@@ -73,7 +76,7 @@ std::optional<CardDetail> CardCalculator::getCardDetail(
         .masterRank = userCard0.masterRank,
         .cardRarityType = card.cardRarityType,
         .characterId = card.characterId,
-        .units = units,
+        .unitMask = unitMask,
         .attr = card.attr,
         .power = power,
         .skill = skill,
