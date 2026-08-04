@@ -90,18 +90,15 @@ void BaseDeckRecommend::findBestCardsDFS(
     }
 
     for (const auto& card : cardDetails) {
-        // 跳过已经重复出现过的卡牌
-        bool has_card = false;
-        for (const auto& deckCard : deckCards) {
-            if (deckCard->cardId == card.cardId) {
-                has_card = true;
-                break;
-            }
+        if (isChallengeLive) {
+            bool selected = std::any_of(deckCards.begin(), deckCards.end(), [&](const auto* deckCard) {
+                return deckCard->cardId == card.cardId;
+            });
+            if (selected)
+                continue;
+        } else if (deckCharacters.test(card.characterId)) {
+            continue;
         }
-        if (has_card) continue;
-
-        // 跳过重复角色
-        if (!isChallengeLive && deckCharacters.test(card.characterId)) continue;
         // 强制角色限制（不需要考虑固定卡牌，两个参数不允许同时存在）
         if (cfg.fixedCharacters.size() > deckCards.size() && cfg.fixedCharacters[deckCards.size()] != card.characterId) {
             continue;
