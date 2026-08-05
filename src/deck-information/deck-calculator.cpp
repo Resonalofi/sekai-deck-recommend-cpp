@@ -158,6 +158,16 @@ int DeckCalculator::getDeckTotalPowerByCards(
     }
 
     int total = honorBonus;
+    if (commonUnitMask == 0) {
+        for (const auto* card : cardDetails) {
+            total += std::max(
+                card->powerTotals[0][allSameAttr],
+                card->powerTotals[1][allSameAttr]
+            );
+        }
+        return total;
+    }
+
     for (const auto* card : cardDetails) {
         int cardPower = 0;
         int unitIndex = 0;
