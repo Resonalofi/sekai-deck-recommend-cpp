@@ -1,6 +1,8 @@
 #ifndef CARD_CALCULATOR_H
 #define CARD_CALCULATOR_H
 
+#include <array>
+
 #include "data-provider/data-provider.h"
 #include "card-information/card-service.h"
 #include "card-information/card-detail-map.h"
@@ -26,6 +28,8 @@ struct CardDetail {
     uint16_t unitMask;
     int attr;
     CardPowerDetailMap power;
+    // [unit slot][same unit * 2 + same attribute]
+    std::array<std::array<int, 4>, 2> powerTotals;
     CardSkillDetailMap skill;
     std::optional<double> maxEventBonus;    // 最大活动加成
     std::optional<double> minEventBonus;    // 最小活动加成，用于终章计算

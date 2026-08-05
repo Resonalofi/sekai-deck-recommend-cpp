@@ -1,5 +1,6 @@
 #include "card-information/card-calculator.h"
 #include "card-calculator.h"
+#include <bit>
 
 std::optional<CardDetail> CardCalculator::getCardDetail(
     const UserCard& userCard,
@@ -52,6 +53,19 @@ std::optional<CardDetail> CardCalculator::getCardDetail(
         userCard0, card, units, userAreaItemLevels, hasCanvasBonus, userGateBonuses,
         isFinalChapter ? std::optional<int>(20) : std::nullopt  // 终章限制玩偶加成2%
     );
+    std::array<std::array<int, 4>, 2> powerTotals{};
+    int unitIndex = 0;
+    for (auto currentUnits = unitMask; currentUnits; currentUnits &= currentUnits - 1, ++unitIndex) {
+        const auto unit = std::countr_zero(currentUnits);
+        for (int sameUnit = 0; sameUnit < 2; ++sameUnit) {
+            for (int sameAttr = 0; sameAttr < 2; ++sameAttr) {
+                const int state = sameUnit * 2 + sameAttr;
+                powerTotals[unitIndex][state] = power.get(
+                    unit, sameUnit ? 5 : 1, sameAttr ? 5 : 1
+                ).total;
+            }
+        }
+    }
 
     CardEventBonusInfo eventBonus{};
     if (eventConfig && eventConfig->eventId != 0) {
@@ -79,6 +93,7 @@ std::optional<CardDetail> CardCalculator::getCardDetail(
         .unitMask = unitMask,
         .attr = card.attr,
         .power = power,
+        .powerTotals = powerTotals,
         .skill = skill,
         .maxEventBonus = eventBonus.maxBonus,
         .minEventBonus = eventBonus.minBonus,
