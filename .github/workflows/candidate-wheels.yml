@@ -19,5 +19,11 @@ jobs:
     uses: ./.github/workflows/build-wheels.yml
     with:
       python_build: "cp312"
-      include_musllinux: false
-      include_windows_arm64: true
+      include_linux_x64_manylinux: true
+      include_linux_x64_musllinux: false
+      include_linux_arm64_manylinux: false
+      include_linux_arm64_musllinux: false
+      include_windows_x64: true
+      include_windows_arm64: false
+      include_macos_x64: false
+      include_macos_arm64: true

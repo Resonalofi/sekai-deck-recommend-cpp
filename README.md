@@ -2,10 +2,21 @@
 
 A C++ optimized version of [sekai-calculator](https://github.com/xfl03/sekai-calculator) with Python bindings, providing both the original brute-force search algorithm and some new randomized algorithms.
 
-## Install from PyPI
+## Install 
 
+This fork’s PyPI name is **`sekai-deck-recommend-cpp-resona`** 
+Import name is unchanged: `sekai_deck_recommend_cpp`.
+
+After a successful `v*` release:
+
+```bash
+uv pip install sekai-deck-recommend-cpp-resona
 ```
-pip install sekai-deck-recommend-cpp
+
+### Upstream package
+
+```bash
+uv pip install sekai-deck-recommend-cpp
 ```
 
 ## Install from source
@@ -20,11 +31,12 @@ pip install sekai-deck-recommend-cpp
 
 ```bash
 # Clone with submodules
-git clone --recursive https://github.com/NeuraXmy/sekai-deck-recommend-cpp.git
+git clone --recursive https://github.com/Resonalofi/sekai-deck-recommend-cpp.git
 cd sekai-deck-recommend-cpp
 
-# Install via pip
-pip install -e . -v
+# Install via pip (compiles locally)
+uv pip install -e . -v
+# or: pip install -e . -v
 ```
 
 ## Build for WebAssembly

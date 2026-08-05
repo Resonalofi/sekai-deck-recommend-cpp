@@ -3,7 +3,7 @@ requires = ["scikit-build-core"]
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "sekai-deck-recommend-cpp"
+name = "sekai-deck-recommend-cpp-resona"
 version = "0.2.21"
 
 [tool.scikit-build]

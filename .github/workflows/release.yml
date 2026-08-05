@@ -1,4 +1,4 @@
-name: Build and publish to PyPI
+name: Build and publish release
 
 on:
   push:
@@ -9,28 +9,32 @@ jobs:
   build_wheels:
     name: Build wheels
     uses: ./.github/workflows/build-wheels.yml
+    with:
+      python_build: "cp312"
+      include_linux_x64_manylinux: true
+      include_linux_x64_musllinux: false
+      include_linux_arm64_manylinux: false
+      include_linux_arm64_musllinux: false
+      include_windows_x64: true
+      include_windows_arm64: false
+      include_macos_x64: false
+      include_macos_arm64: false
 
   build_sdist:
     name: Build sdist
     uses: ./.github/workflows/build-sdist.yml
 
-  publish:
-    name: Publish to PyPI
+  github_release:
+    name: GitHub Release
     needs:
       - build_wheels
       - build_sdist
     runs-on: ubuntu-latest
-
-    environment:
-      name: pypi-publish
-      url: https://pypi.org/p/sekai-deck-recommend-cpp
-
     permissions:
-      id-token: write
       contents: write
 
     steps:
-      - name: Download wheel artifacts
+      - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
@@ -41,10 +45,33 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Uploads pyproject name sekai-deck-recommend-cpp-resona via Trusted Publisher.
+  # First successful run creates the PyPI project and activates the pending publisher.
+  publish_pypi:
+    name: Publish to PyPI
+    needs:
+      - build_wheels
+      - build_sdist
+    runs-on: ubuntu-latest
+    # Keep true until the first publish succeeds; then you can set false if you want hard fails.
+    continue-on-error: true
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+
