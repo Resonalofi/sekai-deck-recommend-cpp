@@ -3,6 +3,7 @@
 
 #include "deck-information/deck-calculator.h"
 #include "live-score/live-calculator.h"
+#include <array>
 #include <set>
 #include <queue>
 #include <bitset>
@@ -86,6 +87,10 @@ struct RecommendCalcInfo {
     
     std::vector<const CardDetail*> deckCards = {};
     std::bitset<32> deckCharacters = 0;
+    uint16_t deckCommonUnitMask = 0;
+    int deckAttr = 0;
+    bool deckAllSameAttr = true;
+    std::array<int, 2> deckMixedUnitPowerTotals{};
     std::unordered_map<uint64_t, double> deckTargetValueMap{};
 
     // 添加一个新结果

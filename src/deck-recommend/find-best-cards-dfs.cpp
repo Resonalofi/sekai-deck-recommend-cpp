@@ -32,7 +32,10 @@ void BaseDeckRecommend::findBestCardsDFS(
     // 已经是完整卡组，计算当前卡组的值
     if (int(deckCards.size()) == member) {
         if (cfg.target == RecommendTarget::Power && int(dfsInfo.deckQueue.size()) >= limit) {
-            auto power = this->deckCalculator.getDeckTotalPowerByCards(deckCards, honorBonus);
+            const bool useMixedUnitPower = member != 5 || dfsInfo.deckCommonUnitMask == 0;
+            const auto power = useMixedUnitPower
+                ? honorBonus + dfsInfo.deckMixedUnitPowerTotals[member == 5 && dfsInfo.deckAllSameAttr]
+                : this->deckCalculator.getDeckTotalPowerByCards(deckCards, honorBonus);
             if (power < dfsInfo.deckQueue.top().power.total) {
                 return;
             }
@@ -146,6 +149,19 @@ void BaseDeckRecommend::findBestCardsDFS(
         preCard = card;
 
         // 递归，寻找所有情况
+        const auto previousCommonUnitMask = dfsInfo.deckCommonUnitMask;
+        const auto previousAttr = dfsInfo.deckAttr;
+        const auto previousAllSameAttr = dfsInfo.deckAllSameAttr;
+        if (deckCards.empty())
+            dfsInfo.deckAttr = card->attr;
+        else
+            dfsInfo.deckAllSameAttr &= card->attr == dfsInfo.deckAttr;
+        dfsInfo.deckCommonUnitMask &= card->unitMask;
+        for (int sameAttr = 0; sameAttr < 2; ++sameAttr) {
+            dfsInfo.deckMixedUnitPowerTotals[sameAttr] += std::max(
+                card->powerTotals[0][sameAttr], card->powerTotals[1][sameAttr]
+            );
+        }
         deckCards.push_back(card);
         deckCharacters.flip(card->characterId);
 
@@ -169,5 +185,13 @@ void BaseDeckRecommend::findBestCardsDFS(
 
         deckCards.pop_back();
         deckCharacters.flip(card->characterId);
+        for (int sameAttr = 0; sameAttr < 2; ++sameAttr) {
+            dfsInfo.deckMixedUnitPowerTotals[sameAttr] -= std::max(
+                card->powerTotals[0][sameAttr], card->powerTotals[1][sameAttr]
+            );
+        }
+        dfsInfo.deckCommonUnitMask = previousCommonUnitMask;
+        dfsInfo.deckAttr = previousAttr;
+        dfsInfo.deckAllSameAttr = previousAllSameAttr;
     }
 }

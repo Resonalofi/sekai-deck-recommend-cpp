@@ -365,6 +365,9 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
             // 使用DFS
             calcInfo.deckCards.clear();
             calcInfo.deckCharacters = 0;
+            calcInfo.deckCommonUnitMask = (uint16_t{1} << UNIT_MAX) - 1;
+            calcInfo.deckAllSameAttr = true;
+            calcInfo.deckMixedUnitPowerTotals = {};
             std::vector<const CardDetail*> dfsCards;
             dfsCards.reserve(cardsSortedByStrength.size());
             for (const auto& card : cardsSortedByStrength)
@@ -372,6 +375,16 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
 
             // 插入固定卡牌
             for (const auto& card : fixedCards) {
+                if (calcInfo.deckCards.empty())
+                    calcInfo.deckAttr = card.attr;
+                else
+                    calcInfo.deckAllSameAttr &= card.attr == calcInfo.deckAttr;
+                calcInfo.deckCommonUnitMask &= card.unitMask;
+                for (int sameAttr = 0; sameAttr < 2; ++sameAttr) {
+                    calcInfo.deckMixedUnitPowerTotals[sameAttr] += std::max(
+                        card.powerTotals[0][sameAttr], card.powerTotals[1][sameAttr]
+                    );
+                }
                 calcInfo.deckCards.push_back(&card);
                 calcInfo.deckCharacters.flip(card.characterId);
             }
