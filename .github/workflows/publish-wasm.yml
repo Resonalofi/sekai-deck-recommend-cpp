@@ -1,0 +1,72 @@
+name: Build and publish WASM to R2
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-wasm-to-r2
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and publish WASM
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: "4.0.21"
+          actions-cache-folder: emsdk-cache
+
+      - name: Configure WASM build
+        run: >-
+          emcmake cmake -S . -B build/wasm -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DSEKAI_DECK_RECOMMEND_WASM_OUTPUT_DIR=${{ github.workspace }}/dist/wasm
+
+      - name: Build WASM
+        run: cmake --build build/wasm --parallel 2
+
+      - name: Smoke test WASM
+        run: node tests/wasm_smoke.mjs dist/wasm
+
+      - name: Upload WASM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sekai-deck-recommend-wasm-${{ github.run_id }}
+          path: dist/wasm/
+          if-no-files-found: error
+
+      - name: Sync WASM to R2
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: "true"
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: |
+          set -euo pipefail
+
+          : "${AWS_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID secret is required}"
+          : "${AWS_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY secret is required}"
+          : "${R2_ENDPOINT:?R2_ENDPOINT secret is required}"
+          : "${R2_BUCKET_NAME:?R2_BUCKET_NAME secret is required}"
+
+          aws s3 sync dist/wasm/ "s3://${R2_BUCKET_NAME}/wasm/" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --delete \
+            --only-show-errors

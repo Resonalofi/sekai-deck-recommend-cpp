@@ -42,6 +42,19 @@ The output directory receives `sekai_deck_recommend_wasm.js`,
 `sekai_deck_recommend_wasm.wasm`, and `sekai_deck_recommend_wasm.data`.
 Omit `SEKAI_DECK_RECOMMEND_WASM_OUTPUT_DIR` to keep the files in the CMake build directory.
 
+Tagged releases and manual runs of the `Build and publish WASM to R2` workflow
+build these assets and synchronize them to a dedicated Cloudflare R2 prefix. Configure
+the following GitHub Actions repository secrets:
+
+- `R2_ENDPOINT`: the complete R2 S3 API endpoint
+- `R2_ACCESS_KEY_ID`: the R2 API token access key ID
+- `R2_SECRET_ACCESS_KEY`: the R2 API token secret access key
+- `R2_BUCKET_NAME`: the destination bucket
+- `R2_WASM_PREFIX`: a non-empty prefix reserved for the current WASM assets
+
+The workflow removes remote files under `R2_WASM_PREFIX` that are not present in the
+new build. Do not point this secret at the bucket root or a shared prefix.
+
 ## Usage
 
 ```python
