@@ -168,7 +168,7 @@ public:
     void findBestCardsDFS(
         int liveType,
         const DeckRecommendConfig& config,
-        const std::vector<CardDetail>& cardDetails,
+        const std::vector<const CardDetail*>& cardDetails,
         std::map<int, std::vector<SupportDeckCard>>& supportCards,
         const std::function<Score(const DeckScoreDetail&)>& scoreFunc,
         RecommendCalcInfo& dfsInfo,

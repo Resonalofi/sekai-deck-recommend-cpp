@@ -365,6 +365,10 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
             // 使用DFS
             calcInfo.deckCards.clear();
             calcInfo.deckCharacters = 0;
+            std::vector<const CardDetail*> dfsCards;
+            dfsCards.reserve(cardsSortedByStrength.size());
+            for (const auto& card : cardsSortedByStrength)
+                dfsCards.push_back(&card);
 
             // 插入固定卡牌
             for (const auto& card : fixedCards) {
@@ -373,7 +377,7 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
             }
 
             findBestCardsDFS(
-                liveType, config, cardsSortedByStrength, supportCards, sf,
+                liveType, config, dfsCards, supportCards, sf,
                 calcInfo,
                 config.limit, Enums::LiveType::isChallenge(liveType), config.member, honorBonus, 
                 eventConfig.eventType, eventConfig.eventId, fixedCards

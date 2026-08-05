@@ -4,7 +4,7 @@
 void BaseDeckRecommend::findBestCardsDFS(
     int liveType,
     const DeckRecommendConfig& cfg,
-    const std::vector<CardDetail> &cardDetails, 
+    const std::vector<const CardDetail*> &cardDetails,
     std::map<int, std::vector<SupportDeckCard>>& supportCards,
     const std::function<Score(const DeckScoreDetail &)> &scoreFunc,
     RecommendCalcInfo& dfsInfo,
@@ -57,22 +57,22 @@ void BaseDeckRecommend::findBestCardsDFS(
             maxPower += card->power.max;
 
         auto availableCharacters = deckCharacters;
-        for (const auto& card : cardDetails) {
+        for (const auto* card : cardDetails) {
             if (remaining == 0)
                 break;
             if (isChallengeLive) {
                 bool selected = std::any_of(deckCards.begin(), deckCards.end(), [&](const auto* deckCard) {
-                    return deckCard->cardId == card.cardId;
+                    return deckCard->cardId == card->cardId;
                 });
                 if (selected)
                     continue;
             }
-            else if (availableCharacters.test(card.characterId)) {
+            else if (availableCharacters.test(card->characterId)) {
                 continue;
             }
 
-            maxPower += card.power.max;
-            availableCharacters.set(card.characterId);
+            maxPower += card->power.max;
+            availableCharacters.set(card->characterId);
             --remaining;
         }
         if (remaining > 0 || maxPower < dfsInfo.deckQueue.top().power.total) {
@@ -83,51 +83,41 @@ void BaseDeckRecommend::findBestCardsDFS(
     // 非完整卡组，继续遍历所有情况
     const CardDetail* preCard = nullptr;
     auto cIndex = fixedCards.size() + cfg.fixedCharacters.size();
-    const uint16_t leaderUnitMask = deckCards.size() >= cIndex + 1
-        ? deckCards[cIndex]->unitMask
-        : 0;
-
-    for (const auto& card : cardDetails) {
+    std::vector<const CardDetail*> compatibleCards;
+    for (const auto* card : cardDetails) {
         if (isChallengeLive) {
             bool selected = std::any_of(deckCards.begin(), deckCards.end(), [&](const auto* deckCard) {
-                return deckCard->cardId == card.cardId;
+                return deckCard->cardId == card->cardId;
             });
             if (selected)
                 continue;
-        } else if (deckCharacters.test(card.characterId)) {
+        } else if (deckCharacters.test(card->characterId)) {
             continue;
         }
         // 强制角色限制（不需要考虑固定卡牌，两个参数不允许同时存在）
-        if (cfg.fixedCharacters.size() > deckCards.size() && cfg.fixedCharacters[deckCards.size()] != card.characterId) {
+        if (cfg.fixedCharacters.size() > deckCards.size() && cfg.fixedCharacters[deckCards.size()] != card->characterId) {
             continue;
         }
-        
-        // C位相关优化，如果使用固定卡牌，则认为C位是第一个不固定的位置，后面的同理（即固定卡牌不参加剪枝）
-        // C位一定是技能最好的卡牌，跳过技能比C位还好的
-        if (deckCards.size() >= cIndex + 1 && deckCards[cIndex]->skill.isCertainlyLessThan(card.skill)) continue;
-        // 为了优化性能，必须和C位同色或同组
-        if (deckCards.size() >= cIndex + 1 && card.attr != deckCards[cIndex]->attr
-            && !(card.unitMask & leaderUnitMask)) continue;
 
         if (deckCards.size() >= cIndex + 2) {
             auto& last = *deckCards.back();
             bool lessThan = false;
             bool greaterThan = false;
             if (cfg.target == RecommendTarget::Score) {
-                lessThan = this->cardCalculator.isCertainlyLessThan(last, card);
-                greaterThan = this->cardCalculator.isCertainlyLessThan(card, last);
+                lessThan = this->cardCalculator.isCertainlyLessThan(last, *card);
+                greaterThan = this->cardCalculator.isCertainlyLessThan(*card, last);
             } else if(cfg.target == RecommendTarget::Power) {
-                lessThan = last.power.isCertainlyLessThan(card.power);
-                greaterThan = card.power.isCertainlyLessThan(last.power);
+                lessThan = last.power.isCertainlyLessThan(card->power);
+                greaterThan = card->power.isCertainlyLessThan(last.power);
             } else if (cfg.target == RecommendTarget::Skill) {
-                lessThan = last.skill.isCertainlyLessThan(card.skill);
-                greaterThan = card.skill.isCertainlyLessThan(last.skill);
+                lessThan = last.skill.isCertainlyLessThan(card->skill);
+                greaterThan = card->skill.isCertainlyLessThan(last.skill);
             }
             // 要求生成的卡组后面4个位置按强弱排序、同强度按卡牌ID排序
             // 如果上一张卡肯定小，那就不符合顺序；
             if (lessThan) continue;
             // 在旗鼓相当的前提下（因为两两组合有四种情况，再排除掉这张卡肯定小的情况，就是旗鼓相当），要ID小
-            if (!greaterThan && card.cardId > last.cardId) continue;
+            if (!greaterThan && card->cardId > last.cardId) continue;
         }
         
         if (preCard) {
@@ -135,13 +125,13 @@ void BaseDeckRecommend::findBestCardsDFS(
             bool lessThan = false;
 
             if (cfg.target == RecommendTarget::Score) {
-                lessThan = this->cardCalculator.isCertainlyLessThan(card, pre);
+                lessThan = this->cardCalculator.isCertainlyLessThan(*card, pre);
             } else if (cfg.target == RecommendTarget::Power) {
-                lessThan = card.power.isCertainlyLessThan(pre.power);
+                lessThan = card->power.isCertainlyLessThan(pre.power);
             } else if (cfg.target == RecommendTarget::Skill) {
-                lessThan = card.skill.isCertainlyLessThan(pre.skill);
+                lessThan = card->skill.isCertainlyLessThan(pre.skill);
             } else if (cfg.target == RecommendTarget::Mysekai) {
-                lessThan = this->cardCalculator.isCertainlyLessThan(card, pre, true, false, true);
+                lessThan = this->cardCalculator.isCertainlyLessThan(*card, pre, true, false, true);
             }
 
             if (cfg.target == RecommendTarget::Score) {
@@ -153,18 +143,31 @@ void BaseDeckRecommend::findBestCardsDFS(
                 if (lessThan && deckCards.size() != member - 1) continue;
             }
         }
-        preCard = &card;
+        preCard = card;
 
         // 递归，寻找所有情况
-        deckCards.push_back(&card);
-        deckCharacters.flip(card.characterId);
+        deckCards.push_back(card);
+        deckCharacters.flip(card->characterId);
+
+        const auto* nextCards = &cardDetails;
+        if (deckCards.size() == cIndex + 1 && deckCards.size() < static_cast<std::size_t>(member)) {
+            compatibleCards.clear();
+            compatibleCards.reserve(cardDetails.size());
+            for (const auto* candidate : cardDetails) {
+                if (!card->skill.isCertainlyLessThan(candidate->skill) &&
+                    (candidate->attr == card->attr || (candidate->unitMask & card->unitMask))) {
+                    compatibleCards.push_back(candidate);
+                }
+            }
+            nextCards = &compatibleCards;
+        }
 
         findBestCardsDFS(
-            liveType, cfg, cardDetails, supportCards, scoreFunc, dfsInfo,
+            liveType, cfg, *nextCards, supportCards, scoreFunc, dfsInfo,
             limit, isChallengeLive, member, honorBonus, eventType, eventId, fixedCards
         );
 
         deckCards.pop_back();
-        deckCharacters.flip(card.characterId);
+        deckCharacters.flip(card->characterId);
     }
 }
