@@ -165,8 +165,7 @@ const std::vector<std::string> requiredMasterDataKeys = {
     "shopItems",
     "skills",
     "worldBloomDifferentAttributeBonuses",
-    "worldBlooms",
-    "worldBloomSupportDeckBonuses"
+    "worldBlooms"
 };
 const std::vector<std::string> notRequiredMasterDataKeys = {
     "worldBloomSupportDeckUnitEventLimitedBonuses",
@@ -383,17 +382,6 @@ void MasterData::loadFromStrings(std::map<std::string, std::string>& data) {
     this->skills = loadMasterDataFromString<Skill>(data, "skills");
     this->worldBloomDifferentAttributeBonuses = loadMasterDataFromString<WorldBloomDifferentAttributeBonus>(data, "worldBloomDifferentAttributeBonuses");
     this->worldBlooms = loadMasterDataFromString<WorldBloom>(data, "worldBlooms");
-    auto supportDeckBonuses = data.find("worldBloomSupportDeckBonuses");
-    if (supportDeckBonuses == data.end())
-        throw std::runtime_error("master data key not found: worldBloomSupportDeckBonuses");
-    try {
-        [[maybe_unused]] auto parsed = json::parse(supportDeckBonuses->second);
-    }
-    catch (const std::exception& e) {
-        throw std::runtime_error("Failed to load master data from string: worldBloomSupportDeckBonuses, error: " + std::string(e.what()));
-    }
-    data.erase(supportDeckBonuses);
-
     this->worldBloomSupportDeckUnitEventLimitedBonuses = loadMasterDataFromString<WorldBloomSupportDeckUnitEventLimitedBonus>(data, "worldBloomSupportDeckUnitEventLimitedBonuses", false);
     this->cardMysekaiCanvasBonuses = loadMasterDataFromString<CardMysekaiCanvasBonus>(data, "cardMysekaiCanvasBonuses", false);
     this->mysekaiFixtureGameCharacterGroups = loadMasterDataFromString<MysekaiFixtureGameCharacterGroup>(data, "mysekaiFixtureGameCharacterGroups", false);
