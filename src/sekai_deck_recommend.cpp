@@ -1145,23 +1145,43 @@ public:
         region_masterdata[REGION_ENUM_MAP.at(region)]->loadFromFiles(base_dir);
     }
 
-    void update_masterdata_from_string_map(std::map<std::string, std::string> data, const std::string& region) {
+    void update_masterdata_from_string_map(
+        std::map<std::string, std::string> data,
+        const std::string& region,
+        const std::optional<std::string>& shared_region = std::nullopt
+    ) {
         if (!REGION_ENUM_MAP.count(region)) 
             throw std::invalid_argument("Invalid region: " + region);
-        auto masterdata = std::make_shared<MasterData>();
-        masterdata->loadFromStrings(data);
+        std::shared_ptr<MasterData> masterdata;
+        if (shared_region.has_value()) {
+            if (!REGION_ENUM_MAP.count(shared_region.value()))
+                throw std::invalid_argument("Invalid shared region: " + shared_region.value());
+            auto shared_region_enum = REGION_ENUM_MAP.at(shared_region.value());
+            if (!region_masterdata.count(shared_region_enum))
+                throw std::invalid_argument("Master data not found for shared region: " + shared_region.value());
+            masterdata = std::make_shared<MasterData>(region_masterdata.at(shared_region_enum)->sharedCore());
+            masterdata->loadHonorsFromStrings(data);
+        }
+        else {
+            masterdata = std::make_shared<MasterData>();
+            masterdata->loadFromStrings(data);
+        }
         region_masterdata[REGION_ENUM_MAP.at(region)] = std::move(masterdata);
     }
 
 #ifndef __EMSCRIPTEN__
     // 从指定string的dict更新区服masterdata数据
-    void update_masterdata_from_strings(const py::dict& dict, const std::string& region) {
+    void update_masterdata_from_strings(
+        const py::dict& dict,
+        const std::string& region,
+        const std::optional<std::string>& shared_region = std::nullopt
+    ) {
         std::map<std::string, std::string> data;
         for (const auto& item : dict) {
             std::string key = item.first.cast<std::string>();
             data[key] = item.second.cast<std::string>();
         }
-        update_masterdata_from_string_map(std::move(data), region);
+        update_masterdata_from_string_map(std::move(data), region, shared_region);
     }
 #endif
 
@@ -1380,7 +1400,13 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
         .def(py::init<>())
         .def(py::init<const SekaiDeckRecommend&>())
         .def("update_masterdata", &SekaiDeckRecommend::update_masterdata)
-        .def("update_masterdata_from_strings", &SekaiDeckRecommend::update_masterdata_from_strings)
+        .def(
+            "update_masterdata_from_strings",
+            &SekaiDeckRecommend::update_masterdata_from_strings,
+            py::arg("data"),
+            py::arg("region"),
+            py::arg("shared_region") = std::nullopt
+        )
         .def("update_musicmetas", &SekaiDeckRecommend::update_musicmetas)
         .def("update_musicmetas_from_string", &SekaiDeckRecommend::update_musicmetas_from_string)
         .def("recommend", &SekaiDeckRecommend::recommend);

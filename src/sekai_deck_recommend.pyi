@@ -363,7 +363,12 @@ class SekaiDeckRecommend:
         """
         ...
 
-    def update_masterdata_from_strings(self, data: Dict[str, Union[str, bytes]], region: str) -> None:
+    def update_masterdata_from_strings(
+        self,
+        data: Dict[str, Union[str, bytes]],
+        region: str,
+        shared_region: Optional[str] = None,
+    ) -> None:
         """
         Update master data of the specific region from dictionary of string or bytes
         Args:
@@ -373,6 +378,7 @@ class SekaiDeckRecommend:
                     "events": "...",
                 }
             region (str): Region in ["jp", "en", "tw", "kr", "cn"]
+            shared_region (Optional[str]): Loaded region whose common master data can be reused
         """
         ...
 

@@ -140,6 +140,47 @@ std::vector<Card> loadCardsFromString(const std::string& input) {
 
 }
 
+MasterData::MasterData()
+    : MasterData(std::make_shared<MasterDataCore>()) {}
+
+MasterData::MasterData(std::shared_ptr<MasterDataCore> core)
+    : storage(std::move(core)),
+      areaItemLevels(storage->areaItemLevels),
+      areaItems(storage->areaItems),
+      areas(storage->areas),
+      cardEpisodes(storage->cardEpisodes),
+      cards(storage->cards),
+      cardMysekaiCanvasBonuses(storage->cardMysekaiCanvasBonuses),
+      cardRarities(storage->cardRarities),
+      characterRanks(storage->characterRanks),
+      eventCards(storage->eventCards),
+      eventDeckBonuses(storage->eventDeckBonuses),
+      eventExchangeSummaries(storage->eventExchangeSummaries),
+      events(storage->events),
+      eventItems(storage->eventItems),
+      eventRarityBonusRates(storage->eventRarityBonusRates),
+      gameCharacters(storage->gameCharacters),
+      gameCharacterUnits(storage->gameCharacterUnits),
+      masterLessons(storage->masterLessons),
+      musicDifficulties(storage->musicDifficulties),
+      musics(storage->musics),
+      musicVocals(storage->musicVocals),
+      mysekaiFixtureGameCharacterGroups(storage->mysekaiFixtureGameCharacterGroups),
+      mysekaiFixtureGameCharacterGroupPerformanceBonuses(storage->mysekaiFixtureGameCharacterGroupPerformanceBonuses),
+      mysekaiGates(storage->mysekaiGates),
+      mysekaiGateLevels(storage->mysekaiGateLevels),
+      shopItems(storage->shopItems),
+      skills(storage->skills),
+      worldBloomDifferentAttributeBonuses(storage->worldBloomDifferentAttributeBonuses),
+      worldBlooms(storage->worldBlooms),
+      worldBloomSupportDeckUnitEventLimitedBonuses(storage->worldBloomSupportDeckUnitEventLimitedBonuses),
+      worldBloomSupportDeckBonusesWL1(storage->worldBloomSupportDeckBonusesWL1),
+      worldBloomSupportDeckBonusesWL2(storage->worldBloomSupportDeckBonusesWL2) {}
+
+std::shared_ptr<MasterDataCore> MasterData::sharedCore() const {
+    return storage;
+}
+
 
 const std::vector<std::string> requiredMasterDataKeys = {
     "areaItemLevels",
@@ -286,6 +327,11 @@ std::vector<T> loadMasterDataFromString(
     data.erase(it);
     auto result = T::fromJsonList(parsed);
     return result;
+}
+
+void MasterData::loadHonorsFromStrings(std::map<std::string, std::string>& data) {
+    this->baseDir.clear();
+    this->honors = loadMasterDataFromString<Honor>(data, "honors");
 }
 
 void MasterData::loadFromJsons(std::map<std::string, json>& jsons) {
