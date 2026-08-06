@@ -1,5 +1,7 @@
 #include "deck-recommend/base-deck-recommend.h"
 
+#include <numeric>
+
 
 void BaseDeckRecommend::findBestCardsDFS(
     int liveType,
@@ -14,6 +16,7 @@ void BaseDeckRecommend::findBestCardsDFS(
     int honorBonus, 
     std::optional<int> eventType,
     std::optional<int> eventId,
+    bool isNoEvent,
     const std::vector<CardDetail>& fixedCards
 )
 {
@@ -79,6 +82,139 @@ void BaseDeckRecommend::findBestCardsDFS(
             --remaining;
         }
         if (remaining > 0 || maxPower < dfsInfo.deckQueue.top().power.total) {
+            return;
+        }
+    }
+
+    // 无活动多人分数对综合力和技能单调；分别取严格上界后仍落后才可整枝。
+    if (cfg.target == RecommendTarget::Score && isNoEvent && !isChallengeLive &&
+        Enums::LiveType::isMulti(liveType) &&
+        int(dfsInfo.deckQueue.size()) >= limit) {
+        const int remaining = member - static_cast<int>(deckCards.size());
+        std::vector<double> skillBounds;
+        skillBounds.reserve(member);
+        for (const auto* card : deckCards) {
+            // skill.max 是截断后的整数比较值，+1 才能覆盖小数技能值。
+            skillBounds.push_back(static_cast<double>(card->skill.max) + 1.0);
+        }
+
+        auto completionPower = [&](std::optional<int> requiredAttr, std::optional<int> requiredUnit) -> std::optional<int> {
+            auto cardPower = [&](const CardDetail& card) {
+                int power = 0;
+                for (auto units = card.unitMask; units; units &= units - 1) {
+                    const auto unit = std::countr_zero(units);
+                    power = std::max(power, card.power.get(
+                        unit, requiredUnit.has_value() ? 5 : 1,
+                        requiredAttr.has_value() ? 5 : 1
+                    ).total);
+                }
+                return power;
+            };
+
+            int power = honorBonus;
+            for (const auto* card : deckCards) {
+                if ((requiredAttr.has_value() && card->attr != requiredAttr.value()) ||
+                    (requiredUnit.has_value() &&
+                        !(card->unitMask & (uint16_t{1} << requiredUnit.value())))) {
+                    return std::nullopt;
+                }
+                power += cardPower(*card);
+            }
+
+            std::array<int, 32> maxPowerByCharacter{};
+            for (const auto* card : cardDetails) {
+                if (!deckCharacters.test(card->characterId) &&
+                    (!requiredAttr.has_value() || card->attr == requiredAttr.value()) &&
+                    (!requiredUnit.has_value() ||
+                        (card->unitMask & (uint16_t{1} << requiredUnit.value())))) {
+                    maxPowerByCharacter[card->characterId] = std::max(
+                        maxPowerByCharacter[card->characterId], cardPower(*card)
+                    );
+                }
+            }
+            std::vector<int> availablePowers;
+            for (const auto powerValue : maxPowerByCharacter) {
+                if (powerValue > 0)
+                    availablePowers.push_back(powerValue);
+            }
+            if (static_cast<int>(availablePowers.size()) < remaining)
+                return std::nullopt;
+            std::sort(availablePowers.begin(), availablePowers.end(), std::greater<>());
+            return power + std::accumulate(
+                availablePowers.begin(), availablePowers.begin() + remaining, 0
+            );
+        };
+
+        std::vector<std::optional<int>> attrs{std::nullopt};
+        if (deckCards.empty()) {
+            std::array<bool, 16> seenAttrs{};
+            for (const auto* card : cardDetails)
+                seenAttrs[card->attr] = true;
+            for (int attr = 0; attr < static_cast<int>(seenAttrs.size()); ++attr) {
+                if (seenAttrs[attr])
+                    attrs.push_back(attr);
+            }
+        }
+        else if (dfsInfo.deckAllSameAttr) {
+            attrs.push_back(dfsInfo.deckAttr);
+        }
+
+        std::vector<std::optional<int>> units{std::nullopt};
+        auto possibleUnits = dfsInfo.deckCommonUnitMask;
+        if (deckCards.empty()) {
+            for (const auto* card : cardDetails)
+                possibleUnits |= card->unitMask;
+        }
+        for (; possibleUnits; possibleUnits &= possibleUnits - 1)
+            units.push_back(std::countr_zero(possibleUnits));
+
+        int maxPower = 0;
+        for (const auto attr : attrs) {
+            for (const auto unit : units) {
+                const auto power = completionPower(attr, unit);
+                if (power.has_value())
+                    maxPower = std::max(maxPower, power.value());
+            }
+        }
+        if (maxPower == 0)
+            return;
+
+        std::array<double, 32> maxSkillByCharacter{};
+        for (const auto* card : cardDetails) {
+            if (!deckCharacters.test(card->characterId)) {
+                maxSkillByCharacter[card->characterId] = std::max(
+                    maxSkillByCharacter[card->characterId],
+                    static_cast<double>(card->skill.max) + 1.0
+                );
+            }
+        }
+        std::vector<double> availableSkillBounds;
+        for (const auto maxSkill : maxSkillByCharacter) {
+            if (maxSkill > 0.0)
+                availableSkillBounds.push_back(maxSkill);
+        }
+        if (static_cast<int>(availableSkillBounds.size()) < remaining) {
+            return;
+        }
+        std::sort(availableSkillBounds.begin(), availableSkillBounds.end(), std::greater<>());
+        skillBounds.insert(
+            skillBounds.end(), availableSkillBounds.begin(),
+            availableSkillBounds.begin() + remaining
+        );
+        std::sort(skillBounds.begin(), skillBounds.end(), std::greater<>());
+
+        DeckScoreDetail upperBound{};
+        upperBound.power.total = maxPower;
+        upperBound.eventBonus = 0.0;
+        upperBound.cardCount = member;
+        std::copy(skillBounds.begin(), skillBounds.end(), upperBound.skillScoreUps.begin());
+        upperBound.multiLiveScoreUp = skillBounds.front();
+        upperBound.multiLiveScoreUp += 0.2 * std::accumulate(
+            skillBounds.begin() + 1, skillBounds.end(), 0.0
+        );
+        const auto score = scoreFunc(upperBound);
+        const double targetValue = score.score + double(score.liveScore) / SCORE_MAX;
+        if (targetValue < dfsInfo.deckQueue.top().targetValue) {
             return;
         }
     }
@@ -180,7 +316,7 @@ void BaseDeckRecommend::findBestCardsDFS(
 
         findBestCardsDFS(
             liveType, cfg, *nextCards, supportCards, scoreFunc, dfsInfo,
-            limit, isChallengeLive, member, honorBonus, eventType, eventId, fixedCards
+            limit, isChallengeLive, member, honorBonus, eventType, eventId, isNoEvent, fixedCards
         );
 
         deckCards.pop_back();

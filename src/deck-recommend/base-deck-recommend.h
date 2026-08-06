@@ -164,6 +164,8 @@ public:
      * @param member 人数限制（2-5、默认5）
      * @param honorBonus 称号加成
      * @param eventType （可选）活动类型
+     * @param eventId （可选）活动ID
+     * @param isNoEvent 是否为内部无活动假活动
      */
     void findBestCardsDFS(
         int liveType,
@@ -178,6 +180,7 @@ public:
         int honorBonus = 0,
         std::optional<int> eventType = std::nullopt,
         std::optional<int> eventId = std::nullopt,
+        bool isNoEvent = false,
         const std::vector<CardDetail>& fixedCards = {}
     );
 

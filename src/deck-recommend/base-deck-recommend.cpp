@@ -260,6 +260,10 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
     }
 
     auto honorBonus = deckCalculator.getHonorBonusPower();
+    const bool isNoEvent =
+        (eventConfig.eventType == Enums::EventType::marathon ||
+            eventConfig.eventType == Enums::EventType::cheerful) &&
+        eventConfig.eventId == this->dataProvider.masterData->getNoEventFakeEventId(eventConfig.eventType);
 
     std::vector<RecommendDeck> ans{};
     std::vector<CardDetail> cardDetails{};
@@ -393,7 +397,7 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
                 liveType, config, dfsCards, supportCards, sf,
                 calcInfo,
                 config.limit, Enums::LiveType::isChallenge(liveType), config.member, honorBonus, 
-                eventConfig.eventType, eventConfig.eventId, fixedCards
+                eventConfig.eventType, eventConfig.eventId, isNoEvent, fixedCards
             );
         }
         else {
