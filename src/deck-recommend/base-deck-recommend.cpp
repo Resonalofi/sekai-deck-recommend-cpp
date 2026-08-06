@@ -397,7 +397,8 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
                 liveType, config, dfsCards, supportCards, sf,
                 calcInfo,
                 config.limit, Enums::LiveType::isChallenge(liveType), config.member, honorBonus, 
-                eventConfig.eventType, eventConfig.eventId, isNoEvent, fixedCards
+                eventConfig.eventType, eventConfig.eventId, isNoEvent, fixedCards,
+                eventConfig.eventType != Enums::EventType::world_bloom || eventConfig.eventUnit != 0
             );
         }
         else {

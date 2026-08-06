@@ -212,6 +212,10 @@ void DeckCalculator::forEachDeckState(
     }
 
     auto powerCalculation = getDeckPowerByCards(cardDetails, honorBonus);
+    if (eventType == Enums::EventType::world_bloom &&
+        this->dataProvider.masterData->getWorldBloomEventTurn(eventId.value_or(0)) == 3) {
+        powerCalculation.total.total = std::min(powerCalculation.total.total, 336000);
+    }
 
     // 预处理队伍，存储每个队伍出现的次数
     int card_num = int(cardDetails.size());
@@ -444,6 +448,6 @@ std::vector<DeckDetail> DeckCalculator::getDeckDetailByCards(
 int DeckCalculator::getWorldBloomSupportDeckCount(int eventId) const
 {
     int turn = this->dataProvider.masterData->getWorldBloomEventTurn(eventId);
-    // wl1 12 wl2 20
-    return turn == 1 ? 12 : 20;
+    // wl1 12, wl2 20, wl3 25
+    return turn == 1 ? 12 : turn == 2 ? 20 : 25;
 }

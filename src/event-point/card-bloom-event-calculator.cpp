@@ -18,11 +18,12 @@ std::optional<double> CardBloomEventCalculator::getCardSupportDeckBonus(const Us
     if (std::find(cardUnits.begin(), cardUnits.end(), specialUnit) == cardUnits.end())
         return std::nullopt;
     
-    auto& worldBloomSupportDeckBonuses = (
-        dataProvider.masterData->getWorldBloomEventTurn(eventId) == 1
+    const int turn = dataProvider.masterData->getWorldBloomEventTurn(eventId);
+    auto& worldBloomSupportDeckBonuses = turn == 1
         ? dataProvider.masterData->worldBloomSupportDeckBonusesWL1
-        : dataProvider.masterData->worldBloomSupportDeckBonusesWL2
-    );
+        : turn == 2
+            ? dataProvider.masterData->worldBloomSupportDeckBonusesWL2
+            : dataProvider.masterData->worldBloomSupportDeckBonusesWL3;
     auto& bonus = findOrThrow(worldBloomSupportDeckBonuses, [&](const WorldBloomSupportDeckBonus& it) {
             return it.cardRarityType == card.cardRarityType; 
         }, [&]() { return "World Bloom Support Deck Bonus not found for cardRarityType=" + std::to_string(card.cardRarityType); }

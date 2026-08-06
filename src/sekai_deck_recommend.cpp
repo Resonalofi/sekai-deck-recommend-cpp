@@ -291,6 +291,7 @@ struct PyDeckRecommendOptions {
     std::optional<std::string> event_unit;
     std::optional<std::string> event_type;
     std::optional<int> world_bloom_event_turn;
+    std::optional<int> world_bloom_event_group;
     std::optional<int> world_bloom_character_id;
     std::optional<int> challenge_live_character_id;
     std::optional<int> limit;
@@ -336,6 +337,8 @@ struct PyDeckRecommendOptions {
         if (event_type.has_value())            result["event_type"] = event_type.value();
         if (world_bloom_event_turn.has_value())
             result["world_bloom_event_turn"] = world_bloom_event_turn.value();
+        if (world_bloom_event_group.has_value())
+            result["world_bloom_event_group"] = world_bloom_event_group.value();
         if (world_bloom_character_id.has_value())
             result["world_bloom_character_id"] = world_bloom_character_id.value();
         if (challenge_live_character_id.has_value())
@@ -409,6 +412,8 @@ struct PyDeckRecommendOptions {
             options.world_bloom_character_id = dict["world_bloom_character_id"].cast<int>();
         if (dict.contains("world_bloom_event_turn"))
             options.world_bloom_event_turn = dict["world_bloom_event_turn"].cast<int>();
+        if (dict.contains("world_bloom_event_group"))
+            options.world_bloom_event_group = dict["world_bloom_event_group"].cast<int>();
         if (dict.contains("challenge_live_character_id"))
             options.challenge_live_character_id = dict["challenge_live_character_id"].cast<int>();
         if (dict.contains("limit"))                 options.limit = dict["limit"].cast<int>();
@@ -702,15 +707,24 @@ class SekaiDeckRecommend {
                 
                 if (pyoptions.world_bloom_event_turn.has_value()) {
                     // liveType非挑战，没有传入eventId时，首先尝试模拟WL组卡
-                    if (!pyoptions.event_unit.has_value())
-                        throw std::invalid_argument("event_unit is required for world bloom fake event.");
-                    if (!VALID_UNIT_TYPES.count(pyoptions.event_unit.value()))
-                        throw std::invalid_argument("Invalid event unit: " + pyoptions.event_unit.value());
                     int turn = pyoptions.world_bloom_event_turn.value();
-                    if (turn < 1 || turn > 2)
+                    if (turn < 1 || turn > 3)
                         throw std::invalid_argument("Invalid world bloom event turn: " + std::to_string(turn));
-                    auto unit = mapEnum(EnumMap::unit, pyoptions.event_unit.value());
-                    options.eventId = options.dataProvider.masterData->getWorldBloomFakeEventId(turn, unit);
+                    if (turn == 3) {
+                        if (!pyoptions.world_bloom_event_group.has_value())
+                            throw std::invalid_argument("world_bloom_event_group is required for WL3 fake event.");
+                        int group = pyoptions.world_bloom_event_group.value();
+                        if (group < 1 || group > 5)
+                            throw std::invalid_argument("Invalid world bloom event group: " + std::to_string(group));
+                        options.eventId = options.dataProvider.masterData->getWorldBloomFakeEventId(turn, group);
+                    } else {
+                        if (!pyoptions.event_unit.has_value())
+                            throw std::invalid_argument("event_unit is required for world bloom fake event.");
+                        if (!VALID_UNIT_TYPES.count(pyoptions.event_unit.value()))
+                            throw std::invalid_argument("Invalid event unit: " + pyoptions.event_unit.value());
+                        auto unit = mapEnum(EnumMap::unit, pyoptions.event_unit.value());
+                        options.eventId = options.dataProvider.masterData->getWorldBloomFakeEventId(turn, unit);
+                    }
 
                 } else if (pyoptions.event_attr.has_value() || pyoptions.event_unit.has_value()) {
                     // 然后尝试指定团+颜色组卡
@@ -1339,6 +1353,7 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
         .def_readwrite("event_unit", &PyDeckRecommendOptions::event_unit)
         .def_readwrite("event_type", &PyDeckRecommendOptions::event_type)
         .def_readwrite("world_bloom_event_turn", &PyDeckRecommendOptions::world_bloom_event_turn)
+        .def_readwrite("world_bloom_event_group", &PyDeckRecommendOptions::world_bloom_event_group)
         .def_readwrite("world_bloom_character_id", &PyDeckRecommendOptions::world_bloom_character_id)
         .def_readwrite("challenge_live_character_id", &PyDeckRecommendOptions::challenge_live_character_id)
         .def_readwrite("limit", &PyDeckRecommendOptions::limit)
@@ -1508,6 +1523,7 @@ PyDeckRecommendOptions optionsFromJson(const json& data, const std::string& user
     readOptional(data, "event_unit", options.event_unit);
     readOptional(data, "event_type", options.event_type);
     readOptional(data, "world_bloom_event_turn", options.world_bloom_event_turn);
+    readOptional(data, "world_bloom_event_group", options.world_bloom_event_group);
     readOptional(data, "world_bloom_character_id", options.world_bloom_character_id);
     readOptional(data, "challenge_live_character_id", options.challenge_live_character_id);
     readOptional(data, "limit", options.limit);

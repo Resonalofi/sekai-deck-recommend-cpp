@@ -181,7 +181,8 @@ public:
         std::optional<int> eventType = std::nullopt,
         std::optional<int> eventId = std::nullopt,
         bool isNoEvent = false,
-        const std::vector<CardDetail>& fixedCards = {}
+        const std::vector<CardDetail>& fixedCards = {},
+        bool applySameUnitOrAttrPrune = true
     );
 
     /**

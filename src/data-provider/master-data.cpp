@@ -175,7 +175,8 @@ MasterData::MasterData(std::shared_ptr<MasterDataCore> core)
       worldBlooms(storage->worldBlooms),
       worldBloomSupportDeckUnitEventLimitedBonuses(storage->worldBloomSupportDeckUnitEventLimitedBonuses),
       worldBloomSupportDeckBonusesWL1(storage->worldBloomSupportDeckBonusesWL1),
-      worldBloomSupportDeckBonusesWL2(storage->worldBloomSupportDeckBonusesWL2) {}
+      worldBloomSupportDeckBonusesWL2(storage->worldBloomSupportDeckBonusesWL2),
+      worldBloomSupportDeckBonusesWL3(storage->worldBloomSupportDeckBonusesWL3) {}
 
 std::shared_ptr<MasterDataCore> MasterData::sharedCore() const {
     return storage;
@@ -374,8 +375,10 @@ void MasterData::finishLoad() {
     std::map<std::string, json> tmp{};
     loadMasterDataJsonFromFile(tmp, getStaticDataDir(), "worldBloomSupportDeckBonusesWL1");
     loadMasterDataJsonFromFile(tmp, getStaticDataDir(), "worldBloomSupportDeckBonusesWL2");
+    loadMasterDataJsonFromFile(tmp, getStaticDataDir(), "worldBloomSupportDeckBonusesWL3");
     this->worldBloomSupportDeckBonusesWL1 = loadMasterData<WorldBloomSupportDeckBonus>(tmp, "worldBloomSupportDeckBonusesWL1");
     this->worldBloomSupportDeckBonusesWL2 = loadMasterData<WorldBloomSupportDeckBonus>(tmp, "worldBloomSupportDeckBonusesWL2");
+    this->worldBloomSupportDeckBonusesWL3 = loadMasterData<WorldBloomSupportDeckBonus>(tmp, "worldBloomSupportDeckBonusesWL3");
 
     addFakeEvent(Enums::EventType::world_bloom);
     addFakeEvent(Enums::EventType::marathon);
@@ -491,6 +494,73 @@ void MasterData::addFakeEvent(int eventType) {
                 }
             }
         }
+
+        const std::array<std::vector<int>, 5> wl3Groups = {{
+            {21, 1, 6, 14, 17},
+            {22, 23, 4, 5, 10, 13},
+            {24, 3, 8, 9, 18},
+            {26, 2, 12, 16, 20},
+            {25, 7, 11, 15, 19},
+        }};
+        for (int groupIndex = 0; groupIndex < static_cast<int>(wl3Groups.size()); ++groupIndex) {
+            const int groupId = groupIndex + 1;
+            const int eventId = getWorldBloomFakeEventId(3, groupId);
+            const auto& group = wl3Groups[groupIndex];
+            const std::set<int> characters(group.begin(), group.end());
+
+            Event event;
+            event.id = eventId;
+            event.eventType = eventType;
+            events.push_back(event);
+
+            for (const auto& characterUnit : gameCharacterUnits) {
+                if (!characters.count(characterUnit.gameCharacterId))
+                    continue;
+                EventDeckBonus bonus;
+                bonus.eventId = eventId;
+                bonus.gameCharacterUnitId = characterUnit.id;
+                bonus.cardAttr = Enums::Attr::null;
+                bonus.bonusRate = 25.0;
+                eventDeckBonuses.push_back(bonus);
+            }
+
+            int chapterNo = 0;
+            for (const auto characterId : group) {
+                WorldBloom worldBloom;
+                worldBloom.eventId = eventId;
+                worldBloom.gameCharacterId = characterId;
+                worldBloom.chapterNo = ++chapterNo;
+                worldBlooms.push_back(worldBloom);
+            }
+
+            std::set<int> limitedCardIds;
+            for (const auto& eventCard : eventCards) {
+                if (eventCard.eventId == finalChapterEventId ||
+                    getWorldBloomEventTurn(eventCard.eventId) > 2 ||
+                    eventCard.bonusRate <= 0) {
+                    continue;
+                }
+                const auto eventIt = std::find_if(events.begin(), events.end(), [&](const Event& current) {
+                    return current.id == eventCard.eventId;
+                });
+                if (eventIt == events.end() || eventIt->eventType != Enums::EventType::world_bloom)
+                    continue;
+                const auto cardIt = std::find_if(cards.begin(), cards.end(), [&](const Card& card) {
+                    return card.id == eventCard.cardId;
+                });
+                if (cardIt == cards.end() || !characters.count(cardIt->characterId) ||
+                    !limitedCardIds.insert(eventCard.cardId).second) {
+                    continue;
+                }
+
+                WorldBloomSupportDeckUnitEventLimitedBonus bonus;
+                bonus.eventId = eventId;
+                bonus.gameCharacterId = cardIt->characterId;
+                bonus.cardId = eventCard.cardId;
+                bonus.bonusRate = 20.0;
+                worldBloomSupportDeckUnitEventLimitedBonuses.push_back(bonus);
+            }
+        }
     }
     else {
         // 无活动组卡
@@ -553,18 +623,24 @@ int MasterData::getUnitAttrFakeEventId(int eventType, int unit, int attr) const
     return 1000000 + unit * 100 + attr + eventType * 100000;
 }
 
-int MasterData::getWorldBloomFakeEventId(int worldBloomTurn, int unit) const
+int MasterData::getWorldBloomFakeEventId(int worldBloomTurn, int unitOrGroup) const
 {
-    if (worldBloomTurn < 1 || worldBloomTurn > 2) {
+    if (worldBloomTurn < 1 || worldBloomTurn > 3) {
         throw std::invalid_argument("Invalid world bloom turn: " + std::to_string(worldBloomTurn));
     }
-    return 3000000 + (worldBloomTurn - 1) * 100000 + unit;
+    if (worldBloomTurn == 3 && (unitOrGroup < 1 || unitOrGroup > 5)) {
+        throw std::invalid_argument("Invalid world bloom group: " + std::to_string(unitOrGroup));
+    }
+    return 3000000 + (worldBloomTurn - 1) * 100000 + unitOrGroup;
 }
 
 int MasterData::getWorldBloomEventTurn(int eventId) const
 {
     if (eventId > 1000) 
         return (eventId / 100000) % 10 + 1;
-    else 
-        return eventId <= 140 ? 1 : 2;  // 140之前为第一轮
+    if (eventId <= 140)
+        return 1;
+    if (eventId <= 180)
+        return 2;
+    return 3;
 }

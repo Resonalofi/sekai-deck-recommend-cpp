@@ -17,7 +17,8 @@ void BaseDeckRecommend::findBestCardsDFS(
     std::optional<int> eventType,
     std::optional<int> eventId,
     bool isNoEvent,
-    const std::vector<CardDetail>& fixedCards
+    const std::vector<CardDetail>& fixedCards,
+    bool applySameUnitOrAttrPrune
 )
 {
     // 超时
@@ -302,7 +303,8 @@ void BaseDeckRecommend::findBestCardsDFS(
         deckCharacters.flip(card->characterId);
 
         const auto* nextCards = &cardDetails;
-        if (deckCards.size() == cIndex + 1 && deckCards.size() < static_cast<std::size_t>(member)) {
+        if (applySameUnitOrAttrPrune &&
+            deckCards.size() == cIndex + 1 && deckCards.size() < static_cast<std::size_t>(member)) {
             compatibleCards.clear();
             compatibleCards.reserve(cardDetails.size());
             for (const auto* candidate : cardDetails) {
@@ -316,7 +318,8 @@ void BaseDeckRecommend::findBestCardsDFS(
 
         findBestCardsDFS(
             liveType, cfg, *nextCards, supportCards, scoreFunc, dfsInfo,
-            limit, isChallengeLive, member, honorBonus, eventType, eventId, isNoEvent, fixedCards
+            limit, isChallengeLive, member, honorBonus, eventType, eventId, isNoEvent, fixedCards,
+            applySameUnitOrAttrPrune
         );
 
         deckCards.pop_back();

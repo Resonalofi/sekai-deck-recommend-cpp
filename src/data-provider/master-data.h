@@ -43,6 +43,7 @@ struct MasterDataCore {
     std::vector<WorldBloomSupportDeckUnitEventLimitedBonus> worldBloomSupportDeckUnitEventLimitedBonuses;
     std::vector<WorldBloomSupportDeckBonus> worldBloomSupportDeckBonusesWL1;
     std::vector<WorldBloomSupportDeckBonus> worldBloomSupportDeckBonusesWL2;
+    std::vector<WorldBloomSupportDeckBonus> worldBloomSupportDeckBonusesWL3;
 };
 
 class MasterData {
@@ -92,6 +93,7 @@ public:
     std::vector<WorldBloomSupportDeckUnitEventLimitedBonus>& worldBloomSupportDeckUnitEventLimitedBonuses;
     std::vector<WorldBloomSupportDeckBonus>& worldBloomSupportDeckBonusesWL1;
     std::vector<WorldBloomSupportDeckBonus>& worldBloomSupportDeckBonusesWL2;
+    std::vector<WorldBloomSupportDeckBonus>& worldBloomSupportDeckBonusesWL3;
 
     std::shared_ptr<MasterDataCore> sharedCore() const;
 
@@ -107,7 +109,7 @@ public:
 
     int getUnitAttrFakeEventId(int eventType, int unit, int attr) const;
 
-    int getWorldBloomFakeEventId(int worldBloomTurn, int unit) const;
+    int getWorldBloomFakeEventId(int worldBloomTurn, int unitOrGroup) const;
 
     int getWorldBloomEventTurn(int eventId) const;
 
