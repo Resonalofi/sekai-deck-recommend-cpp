@@ -1,6 +1,16 @@
 #include "data-provider/music-metas.h"
 #include <fstream>
 
+MusicMetas::MusicMetas()
+    : MusicMetas(std::make_shared<MusicMetasCore>()) {}
+
+MusicMetas::MusicMetas(std::shared_ptr<MusicMetasCore> core)
+    : storage(std::move(core)), metas(storage->metas) {}
+
+std::shared_ptr<MusicMetasCore> MusicMetas::sharedCore() const {
+    return storage;
+}
+
 void MusicMetas::loadFromJson(const json &j)
 {
     this->metas = MusicMeta::fromJsonList(j);

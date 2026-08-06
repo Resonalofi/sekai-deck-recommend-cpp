@@ -1194,11 +1194,27 @@ public:
     }
 
     // 从指定string更新区服musicmetas数据
-    void update_musicmetas_from_string(const std::string& s, const std::string& region) {
+    void update_musicmetas_from_string(
+        const std::string& s,
+        const std::string& region,
+        const std::optional<std::string>& shared_region = std::nullopt
+    ) {
         if (!REGION_ENUM_MAP.count(region)) 
             throw std::invalid_argument("Invalid region: " + region);
-        region_musicmetas[REGION_ENUM_MAP.at(region)] = std::make_shared<MusicMetas>();
-        region_musicmetas[REGION_ENUM_MAP.at(region)]->loadFromString(s);
+        std::shared_ptr<MusicMetas> musicmetas;
+        if (shared_region.has_value()) {
+            if (!REGION_ENUM_MAP.count(shared_region.value()))
+                throw std::invalid_argument("Invalid shared region: " + shared_region.value());
+            auto shared_region_enum = REGION_ENUM_MAP.at(shared_region.value());
+            if (!region_musicmetas.count(shared_region_enum))
+                throw std::invalid_argument("Music metas not found for shared region: " + shared_region.value());
+            musicmetas = std::make_shared<MusicMetas>(region_musicmetas.at(shared_region_enum)->sharedCore());
+        }
+        else {
+            musicmetas = std::make_shared<MusicMetas>();
+            musicmetas->loadFromString(s);
+        }
+        region_musicmetas[REGION_ENUM_MAP.at(region)] = std::move(musicmetas);
     }
 
     // 推荐卡组
@@ -1408,7 +1424,13 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
             py::arg("shared_region") = std::nullopt
         )
         .def("update_musicmetas", &SekaiDeckRecommend::update_musicmetas)
-        .def("update_musicmetas_from_string", &SekaiDeckRecommend::update_musicmetas_from_string)
+        .def(
+            "update_musicmetas_from_string",
+            &SekaiDeckRecommend::update_musicmetas_from_string,
+            py::arg("data"),
+            py::arg("region"),
+            py::arg("shared_region") = std::nullopt
+        )
         .def("recommend", &SekaiDeckRecommend::recommend);
 }
 #else

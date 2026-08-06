@@ -391,12 +391,18 @@ class SekaiDeckRecommend:
         """
         ...
 
-    def update_musicmetas_from_string(self, data: Union[str, bytes], region: str) -> None:
+    def update_musicmetas_from_string(
+        self,
+        data: Union[str, bytes],
+        region: str,
+        shared_region: Optional[str] = None,
+    ) -> None:
         """
         Update music metas of the specific region from string or bytes
         Args:
             data (bytes): String or bytes of music metas json
             region (str): Region in ["jp", "en", "tw", "kr", "cn"]
+            shared_region (Optional[str]): Loaded region whose parsed music metas can be reused
         """
         ...
 
