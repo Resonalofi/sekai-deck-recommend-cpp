@@ -193,7 +193,8 @@ void BaseDeckRecommend::findWorldBloomTargetBonusCardsDFS(
     }
     for(auto& [key, cards] : bonusCharaCards) {
         std::sort(cards.begin(), cards.end(), [](const CardDetail *a, const CardDetail *b) {
-            return std::tuple(a->power.max, a->cardId) < std::tuple(b->power.max, b->cardId);
+            return std::tuple(a->skill.max, a->power.max, a->cardId)
+                 > std::tuple(b->skill.max, b->power.max, b->cardId);
         });
     }
 
