@@ -93,7 +93,8 @@ BestPermutationResult BaseDeckRecommend::getBestPermutation(
         eventId,
         config.skillReferenceChooseStrategy,
         config.keepAfterTrainingState,
-        bestSkillAsLeader
+        bestSkillAsLeader,
+        /*slimPower=*/true
     );
     return ret;
 }

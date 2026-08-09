@@ -109,7 +109,8 @@ public:
         std::optional<int> eventId = std::nullopt,
         SkillReferenceChooseStrategy skillReferenceChooseStrategy = SkillReferenceChooseStrategy::Average,
         bool keepAfterTrainingState = false,
-        bool bestSkillAsLeader = true
+        bool bestSkillAsLeader = true,
+        bool slimPower = false
     );
 
     /**

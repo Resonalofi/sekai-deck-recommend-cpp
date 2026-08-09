@@ -191,27 +191,54 @@ void DeckCalculator::forEachDeckState(
     std::optional<int> eventId,
     SkillReferenceChooseStrategy skillReferenceChooseStrategy,
     bool keepAfterTrainingState,
-    bool bestSkillAsLeader
+    bool bestSkillAsLeader,
+    bool slimPower
 )
-{   
+{
     // 活动加成
     auto eventBonusInfo = getDeckBonus(cardDetails, eventType, eventId);
-    
+
     // 支援加成
     SupportDeckBonus supportDeckBonus{};
     if (supportCards.size()) {
         std::vector<SupportDeckCard>* pSupportCards = nullptr;
-        if (eventId.value_or(0) == finalChapterEventId) 
+        if (eventId.value_or(0) == finalChapterEventId)
             pSupportCards = &supportCards[cardDetails[0]->characterId]; // 终章支援角色为队长角色
         else
             pSupportCards = &(supportCards.begin()->second);    // 普通wl只会处理出一组支援卡牌列表
         supportDeckBonus = this->getSupportDeckBonus(
-            cardDetails, *pSupportCards, 
+            cardDetails, *pSupportCards,
             this->getWorldBloomSupportDeckCount(eventId.value_or(0))
         );
     }
 
-    auto powerCalculation = getDeckPowerByCards(cardDetails, honorBonus);
+    // 评分路径只消费 power.total.total 与 unitCounts，跳过分项综合力物化；
+    // powerTotals[槽][状态] 与 power.get(unit, 组合数==5?5:1, 属性数==5?5:1).total 逐值等价
+    DeckPowerCalculation powerCalculation{};
+    if (slimPower) {
+        int attrMap[16] = {};
+        for (const auto* card : cardDetails) {
+            ++attrMap[card->attr];
+            for (auto units = card->unitMask; units; units &= units - 1)
+                ++powerCalculation.unitCounts[std::countr_zero(units)];
+        }
+        int total = honorBonus;
+        for (const auto* card : cardDetails) {
+            const int attrState = attrMap[card->attr] == 5 ? 1 : 0;
+            int best = 0;
+            int slot = 0;
+            for (auto units = card->unitMask; units; units &= units - 1, ++slot) {
+                const auto unit = std::countr_zero(units);
+                const int state = (powerCalculation.unitCounts[unit] == 5 ? 2 : 0) + attrState;
+                best = std::max(best, card->powerTotals[slot][state]);
+            }
+            total += best;
+        }
+        powerCalculation.total.total = total;
+    }
+    else {
+        powerCalculation = getDeckPowerByCards(cardDetails, honorBonus);
+    }
     if (eventType == Enums::EventType::world_bloom &&
         this->dataProvider.masterData->getWorldBloomEventTurn(eventId.value_or(0)) == 3) {
         powerCalculation.total.total = std::min(powerCalculation.total.total, 336000);
@@ -231,8 +258,10 @@ void DeckCalculator::forEachDeckState(
 
     for (int i = 0; i < card_num; ++i) {
         auto& cardDetail = *cardDetails[i];
+        // 直接写入 prepareSkills（已零初始化），避免逐卡 112B 结构体拷贝
+        auto& s1 = prepareSkills[i][0];
+        auto& s2 = prepareSkills[i][1];
         // 获取普通技能效果（所有普通技能&bf花后）
-        DeckCardSkillDetail s2 = {};
         // 组分技能效果（对vs有多个组合取最大）或 固定技能效果
         for (auto units = cardDetail.unitMask; units; units &= units - 1) {
             const auto unit = std::countr_zero(units);
@@ -241,12 +270,11 @@ void DeckCalculator::forEachDeckState(
         }
 
         // 获取双技能的花前技能效果，以及判断是否需要枚举技能状态
-        DeckCardSkillDetail s1 = {};
         bool needEnumerate = false;
 
         // 吸分技能效果(max)
         auto current = cardDetail.skill.get(Enums::Unit::ref, 1, 1);
-        current.scoreUp += current.scoreUpReferenceMax;   
+        current.scoreUp += current.scoreUpReferenceMax;
         if (current.skillId != s2.skillId && current.scoreUp > s1.scoreUp) {
             s1 = current;
             needEnumerate = true;   // 吸分技能需要枚举
@@ -259,7 +287,7 @@ void DeckCalculator::forEachDeckState(
         }
 
         // 记录有双技能的位置
-        if(s1.skillId) doubleSkillMask |= (1 << i); 
+        if(s1.skillId) doubleSkillMask |= (1 << i);
 
         if (keepAfterTrainingState) {
             // 如果指定不改变状态，则无论如何都不枚举，并且根据用户选择的状态设置
@@ -268,15 +296,13 @@ void DeckCalculator::forEachDeckState(
         } else {
             if (needEnumerate) {
                 // 需要枚举则记录需要枚举的位置
-                needEnumerateStatusMask |= (1 << i);   
+                needEnumerateStatusMask |= (1 << i);
                 needEnumerateCount++;
             } else {
-                // 不需要枚举则花后设置为两个技能的最大 
-                s2 = (s2.scoreUp >= s1.scoreUp ? s2 : s1); 
+                // 不需要枚举则花后设置为两个技能的最大
+                if (s1.scoreUp > s2.scoreUp) s2 = s1;
             }
         }
-
-        prepareSkills[i] = { s1, s2 };
     }
 
     // 枚举技能状态，计算当前卡组的实际技能效果（包括选择花前/花后技能），并归纳卡牌在队伍中的详情信息
