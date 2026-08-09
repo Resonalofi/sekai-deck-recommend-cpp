@@ -216,8 +216,15 @@ void BaseDeckRecommend::findBestCardsDFS(
         DeckScoreDetail upperBound{};
         upperBound.power.total = maxPower;
         upperBound.eventBonus = 0.0;
-        upperBound.cardCount = member;
+        // 真实卡组恒以 cardCount=5 评分，member<5 时 order 末尾回落到队长位，
+        // 即空位复用队长技能；上界必须用同一形状，否则会走进短卡组分支读越界。
+        upperBound.cardCount = 5;
         std::copy(skillBounds.begin(), skillBounds.begin() + skillBoundCount, upperBound.skillScoreUps.begin());
+        std::fill(
+            upperBound.skillScoreUps.begin() + skillBoundCount,
+            upperBound.skillScoreUps.end(),
+            skillBounds.front()
+        );
         upperBound.multiLiveScoreUp = skillBounds.front();
         upperBound.multiLiveScoreUp += 0.2 * std::accumulate(
             skillBounds.begin() + 1, skillBounds.begin() + skillBoundCount, 0.0
