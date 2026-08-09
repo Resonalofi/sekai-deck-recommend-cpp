@@ -46,6 +46,19 @@ static const std::set<std::string> VALID_ALGORITHMS = {
     "ga",
 };
 
+static const std::map<RecommendAlgorithm, std::string> ALGORITHM_NAME_MAP = {
+    {RecommendAlgorithm::DFS, "dfs"},
+    {RecommendAlgorithm::SA, "sa"},
+    {RecommendAlgorithm::GA, "ga"},
+};
+
+static RecommendAlgorithm parseAlgorithm(const std::string& name) {
+    if (!VALID_ALGORITHMS.count(name))
+        throw std::invalid_argument("Invalid algorithm: " + name);
+    return name == "sa" ? RecommendAlgorithm::SA
+        : name == "dfs" ? RecommendAlgorithm::DFS : RecommendAlgorithm::GA;
+}
+
 static const std::set<std::string> VALID_MUSIC_DIFFS = {
     "easy",
     "normal",
@@ -551,6 +564,8 @@ struct PyRecommendDeck {
     double support_deck_bonus_rate;
     double multi_live_score_up;
     std::vector<PyRecommendCard> cards;
+    // 找出这一队的算法，按请求里给出的算法顺序排列
+    std::vector<std::string> algorithms;
 
 #ifndef __EMSCRIPTEN__
     py::dict to_dict() const {
@@ -568,6 +583,7 @@ struct PyRecommendDeck {
         result["event_bonus_rate"] = event_bonus_rate;
         result["support_deck_bonus_rate"] = support_deck_bonus_rate;
         result["multi_live_score_up"] = multi_live_score_up;
+        result["algorithms"] = algorithms;
 
         py::list card_list;
         for (const auto& card : cards) {
@@ -592,6 +608,7 @@ struct PyRecommendDeck {
         deck.event_bonus_rate = dict["event_bonus_rate"].cast<double>();
         deck.support_deck_bonus_rate = dict["support_deck_bonus_rate"].cast<double>();
         deck.multi_live_score_up = dict["multi_live_score_up"].cast<double>();
+        deck.algorithms = dict["algorithms"].cast<std::vector<std::string>>();
 
         auto card_list = dict["cards"].cast<py::list>();
         for (const auto& item : card_list) {
@@ -606,6 +623,10 @@ struct PyRecommendDeck {
 // 返回python的推荐结果
 struct PyDeckRecommendResult {
     std::vector<PyRecommendDeck> decks;
+    // 引擎侧总耗时（毫秒），含用户数据解析、卡牌详情预计算与结果搜索
+    double total_ms = 0;
+    // 各算法的搜索耗时（毫秒）；并行运行组合算法时相加会超过 total_ms
+    std::map<std::string, double> algorithm_ms;
 
 #ifndef __EMSCRIPTEN__
     py::dict to_dict() const {
@@ -615,6 +636,8 @@ struct PyDeckRecommendResult {
             deck_list.append(deck.to_dict());
         }
         result["decks"] = deck_list;
+        result["total_ms"] = total_ms;
+        result["algorithm_ms"] = algorithm_ms;
         return result;
     }
     static PyDeckRecommendResult from_dict(const py::dict& dict) {
@@ -623,6 +646,8 @@ struct PyDeckRecommendResult {
         for (const auto& item : deck_list) {
             result.decks.push_back(PyRecommendDeck::from_dict(item.cast<py::dict>()));
         }
+        result.total_ms = dict["total_ms"].cast<double>();
+        result.algorithm_ms = dict["algorithm_ms"].cast<std::map<std::string, double>>();
         return result;
     }
 #endif
@@ -809,23 +834,12 @@ class SekaiDeckRecommend {
             }
 
             // algorithm
-            std::string algorithm = pyoptions.algorithm.value_or(DEFAULT_ALGORITHM);
-            if (!VALID_ALGORITHMS.count(algorithm))
-                throw std::invalid_argument("Invalid algorithm: " + algorithm);
-            if (algorithm == "sa")
-                config.algorithm = RecommendAlgorithm::SA;
-            else if (algorithm == "dfs")
-                config.algorithm = RecommendAlgorithm::DFS;
-            else if (algorithm == "ga")
-                config.algorithm = RecommendAlgorithm::GA;
+            config.algorithm = parseAlgorithm(pyoptions.algorithm.value_or(DEFAULT_ALGORITHM));
 
             // algorithms（组合算法，非空时忽略 algorithm）
             if (pyoptions.algorithms.has_value()) {
                 for (const auto& name : pyoptions.algorithms.value()) {
-                    if (!VALID_ALGORITHMS.count(name))
-                        throw std::invalid_argument("Invalid algorithm: " + name);
-                    auto parsed = name == "sa" ? RecommendAlgorithm::SA
-                        : name == "dfs" ? RecommendAlgorithm::DFS : RecommendAlgorithm::GA;
+                    auto parsed = parseAlgorithm(name);
                     if (std::find(config.algorithms.begin(), config.algorithms.end(), parsed)
                         != config.algorithms.end())
                         throw std::invalid_argument("Duplicated algorithm: " + name);
@@ -1139,9 +1153,16 @@ class SekaiDeckRecommend {
         return options;
     }
 
-    PyDeckRecommendResult construct_result_to_py(const std::vector<RecommendDeck>& result) const {
+    PyDeckRecommendResult construct_result_to_py(
+        const RecommendResult& result,
+        const std::vector<RecommendAlgorithm>& requestedAlgorithms
+    ) const {
         auto ret = PyDeckRecommendResult();
-        for (const auto& deck : result) {
+        for (const auto algorithm : requestedAlgorithms) {
+            long long ns = result.algorithmNs[int(algorithm)];
+            ret.algorithm_ms[ALGORITHM_NAME_MAP.at(algorithm)] = double(ns) / 1e6;
+        }
+        for (const auto& deck : result.decks) {
             auto py_deck = PyRecommendDeck();
             py_deck.score = deck.score;
             py_deck.live_score = deck.liveScore;
@@ -1156,6 +1177,10 @@ class SekaiDeckRecommend {
             py_deck.event_bonus_rate = deck.eventBonus.value_or(0);
             py_deck.support_deck_bonus_rate = deck.supportDeckBonus.value_or(0);
             py_deck.multi_live_score_up = deck.multiLiveScoreUp;
+            // 按请求给出的算法顺序列出找到这一队的算法
+            for (const auto algorithm : requestedAlgorithms)
+                if (deck.algorithmMask & recommendAlgorithmBit(algorithm))
+                    py_deck.algorithms.push_back(ALGORITHM_NAME_MAP.at(algorithm));
 
             for (const auto& card : deck.cards) {
                 auto py_card = PyRecommendCard();
@@ -1298,10 +1323,12 @@ public:
 
     // 推荐卡组
     PyDeckRecommendResult recommend(const PyDeckRecommendOptions& pyoptions) {
+        const long long startNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
         auto options = construct_options_from_py(pyoptions);
 
-        std::vector<RecommendDeck> result;
-        
+        RecommendResult result;
+
         if (options.config.target == RecommendTarget::Mysekai) {
             MysekaiDeckRecommend mysekaiDeckRecommend(options.dataProvider);
             result = mysekaiDeckRecommend.recommendMysekaiDeck(
@@ -1326,7 +1353,14 @@ public:
             );
         }
 
-        return construct_result_to_py(result);
+        // 组合算法时按请求顺序，单算法时只有一项
+        auto requestedAlgorithms = options.config.algorithms;
+        if (requestedAlgorithms.empty())
+            requestedAlgorithms.push_back(options.config.algorithm);
+        auto pyResult = construct_result_to_py(result, requestedAlgorithms);
+        pyResult.total_ms = double(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count() - startNs) / 1e6;
+        return pyResult;
     }
 
 };
@@ -1485,6 +1519,7 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
         .def_readwrite("event_bonus_rate", &PyRecommendDeck::event_bonus_rate)
         .def_readwrite("support_deck_bonus_rate", &PyRecommendDeck::support_deck_bonus_rate)
         .def_readwrite("multi_live_score_up", &PyRecommendDeck::multi_live_score_up)
+        .def_readwrite("algorithms", &PyRecommendDeck::algorithms)
         .def_readwrite("cards", &PyRecommendDeck::cards);
     
     py::class_<PyDeckRecommendResult>(m, "DeckRecommendResult")
@@ -1492,7 +1527,9 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
         .def(py::init<const PyDeckRecommendResult&>())
         .def("to_dict", &PyDeckRecommendResult::to_dict)
         .def_static("from_dict", &PyDeckRecommendResult::from_dict)
-        .def_readwrite("decks", &PyDeckRecommendResult::decks);
+        .def_readwrite("decks", &PyDeckRecommendResult::decks)
+        .def_readwrite("total_ms", &PyDeckRecommendResult::total_ms)
+        .def_readwrite("algorithm_ms", &PyDeckRecommendResult::algorithm_ms);
 
     py::class_<SekaiDeckRecommend>(m, "SekaiDeckRecommend")
         .def(py::init<>())
@@ -1675,10 +1712,15 @@ json resultToJson(const PyDeckRecommendResult& result) {
             {"event_bonus_rate", deck.event_bonus_rate},
             {"support_deck_bonus_rate", deck.support_deck_bonus_rate},
             {"multi_live_score_up", deck.multi_live_score_up},
+            {"algorithms", deck.algorithms},
             {"cards", std::move(cards)},
         });
     }
-    return {{"decks", std::move(decks)}};
+    return {
+        {"decks", std::move(decks)},
+        {"total_ms", result.total_ms},
+        {"algorithm_ms", result.algorithm_ms},
+    };
 }
 
 class WasmDeckRecommendEngine {

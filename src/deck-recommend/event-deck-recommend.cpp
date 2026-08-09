@@ -1,6 +1,6 @@
 #include "deck-recommend/event-deck-recommend.h"
 
-std::vector<RecommendDeck> EventDeckRecommend::recommendEventDeck(int eventId, int liveType, const DeckRecommendConfig &config, int specialCharacterId)
+RecommendResult EventDeckRecommend::recommendEventDeck(int eventId, int liveType, const DeckRecommendConfig &config, int specialCharacterId)
 {
     auto eventConfig = eventService.getEventConfig(eventId, specialCharacterId);
     if (!eventConfig.eventType) {

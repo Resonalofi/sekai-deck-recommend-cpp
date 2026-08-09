@@ -290,6 +290,7 @@ class RecommendDeck:
         event_bonus_rate (float): Event bonus rate of the deck
         support_deck_bonus_rate (float): Support deck bonus rate of the deck
         multi_live_score_up (float): final score up of the deck in multi live
+        algorithms (List[str]): algorithms that found this deck, ordered as requested
         cards (List[RecommendCard]): List of recommended cards in the deck
     """
     score: int
@@ -305,6 +306,7 @@ class RecommendDeck:
     event_bonus_rate: float
     support_deck_bonus_rate: float
     multi_live_score_up: float
+    algorithms: List[str]
     cards: List[RecommendCard]
 
     def to_dict(self) -> Dict[str, Any]:
@@ -319,8 +321,13 @@ class DeckRecommendResult:
     Deck recommendation result
     Attributes:
         decks (List[RecommendDeck]): List of recommended decks
+        total_ms (float): engine-side wall time of the whole recommend call, in milliseconds
+        algorithm_ms (Dict[str, float]): search time of each requested algorithm, in
+            milliseconds; with parallel_algorithms the values overlap and sum above total_ms
     """
     decks: List[RecommendDeck]
+    total_ms: float
+    algorithm_ms: Dict[str, float]
 
     def to_dict(self) -> Dict[str, Any]:
         ...

@@ -16,6 +16,21 @@ enum class RecommendAlgorithm {
     GA
 };
 
+inline constexpr size_t recommendAlgorithmCount = 3;
+
+// 某一算法在结果里的置位
+inline constexpr uint32_t recommendAlgorithmBit(RecommendAlgorithm algorithm) {
+    return uint32_t{1} << int(algorithm);
+}
+
+// 推荐结果，附带引擎侧计时
+struct RecommendResult {
+    std::vector<RecommendDeck> decks = {};
+    // 各算法的累计搜索耗时（纳秒），下标为 RecommendAlgorithm 的取值
+    // 并行运行组合算法时是各算法各自的墙钟耗时，相加会超过实际墙钟
+    std::array<long long, recommendAlgorithmCount> algorithmNs = {};
+};
+
 struct DeckRecommendConfig {
     // 歌曲ID
     int musicId;
@@ -321,7 +336,7 @@ public:
      * @param specialCharacterId 指定角色ID（如果要计算世界开花活动PT的话）
      * @param isChallengeLive 是否挑战Live（人员可重复）
      */
-    std::vector<RecommendDeck> recommendHighScoreDeck(
+    RecommendResult recommendHighScoreDeck(
         const std::vector<UserCard>& userCards,
         ScoreFunction scoreFunc,
         const DeckRecommendConfig& config,

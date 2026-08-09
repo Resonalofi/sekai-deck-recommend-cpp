@@ -7,6 +7,17 @@
 #include <thread>
 
 
+namespace {
+
+// 单调时钟的纳秒读数，用于给各算法计时（timeout 用的 high_resolution_clock 可能回跳）
+long long steadyNowNs() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+}  // namespace
+
+
 void BaseDeckRecommend::runRecommendAlgorithm(
     RecommendAlgorithm algorithm,
     int liveType,
@@ -220,7 +231,7 @@ RecommendDeck BaseDeckRecommend::materializeCandidate(
 }
 
 
-std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
+RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
     const std::vector<UserCard> &userCards,
     ScoreFunction scoreFunc,
     const DeckRecommendConfig &config,
@@ -354,7 +365,8 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
 
     auto honorBonus = deckCalculator.getHonorBonusPower();
 
-    std::vector<RecommendDeck> ans{};
+    RecommendResult result{};
+    auto& ans = result.decks;
     std::vector<CardDetail> cardDetails{};
     std::vector<CardDetail> preCardDetails{};
     auto sf = [&scoreFunc, &musicMeta](const DeckScoreDetail& deckDetail) { return scoreFunc(musicMeta, deckDetail); };
@@ -406,6 +418,8 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
 #else
     const bool runAlgorithmsInParallel = config.parallelAlgorithms && algorithms.size() > 1;
 #endif
+    // 只运行一个算法时来源无需跨算法汇总
+    calcInfo.trackAlgorithmSources = algorithms.size() > 1;
 
     // 指定活动加成组卡
     if (config.target == RecommendTarget::Bonus) {
@@ -416,6 +430,8 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
             throw std::runtime_error("Bonus target only supports DFS algorithm");
 
         // WL和普通活动采用不同代码
+        calcInfo.currentAlgorithmMask = recommendAlgorithmBit(RecommendAlgorithm::DFS);
+        const long long bonusStartNs = steadyNowNs();
         if (eventConfig.eventType != Enums::EventType::world_bloom) {
             findTargetBonusCardsDFS(
                 liveType, config, cards, sf, calcInfo,
@@ -428,16 +444,18 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
                 config.limit, config.member, eventConfig.eventType, eventConfig.eventId
             );
         }
+        result.algorithmNs[int(RecommendAlgorithm::DFS)] += steadyNowNs() - bonusStartNs;
 
         while (calcInfo.deckQueue.size()) {
             ans.emplace_back(calcInfo.deckQueue.top());
+            ans.back().algorithmMask = calcInfo.sourceMaskOf(ans.back());
             calcInfo.deckQueue.pop();
         }
         // 按照活动加成从小到大排序，同加成按分数从小到大排序
         std::sort(ans.begin(), ans.end(), [](const RecommendDeck& a, const RecommendDeck& b) {
             return std::tuple(-a.eventBonus.value_or(0), a.targetValue) > std::tuple(-b.eventBonus.value_or(0), b.targetValue);
         });
-        return ans;
+        return result;
     }
 
     // 最优化组卡
@@ -495,10 +513,13 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
             );
             std::vector<RecommendCalcInfo> infos(algorithms.size(), calcInfo);
             std::vector<std::exception_ptr> errors(algorithms.size());
+            std::vector<long long> elapsedNs(algorithms.size(), 0);
             std::vector<std::thread> threads{};
             threads.reserve(algorithms.size());
             for (size_t i = 0; i < algorithms.size(); ++i) {
+                infos[i].currentAlgorithmMask = recommendAlgorithmBit(algorithms[i]);
                 threads.emplace_back([&, i] {
+                    const long long startNs = steadyNowNs();
                     try {
                         engines[i].runRecommendAlgorithm(
                             algorithms[i], liveType, config, eventConfig, poolFor(algorithms[i]),
@@ -508,10 +529,13 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
                     catch (...) {
                         errors[i] = std::current_exception();
                     }
+                    elapsedNs[i] = steadyNowNs() - startNs;
                 });
             }
             for (auto& thread : threads)
                 thread.join();
+            for (size_t i = 0; i < algorithms.size(); ++i)
+                result.algorithmNs[int(algorithms[i])] += elapsedNs[i];
             for (const auto& error : errors)
                 if (error) std::rethrow_exception(error);
             for (const auto& info : infos)
@@ -520,10 +544,13 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
         else {
             // 串行：共用同一份结果，后跑的算法可以直接用已有最优解剪枝
             for (const auto algorithm : algorithms) {
+                calcInfo.currentAlgorithmMask = recommendAlgorithmBit(algorithm);
+                const long long startNs = steadyNowNs();
                 runRecommendAlgorithm(
                     algorithm, liveType, config, eventConfig, poolFor(algorithm),
                     supportCards, sf, calcInfo, honorBonus, fixedCards
                 );
+                result.algorithmNs[int(algorithm)] += steadyNowNs() - startNs;
             }
         }
 
@@ -531,6 +558,7 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
         auto q = calcInfo.deckQueue;
         while (q.size()) {
             ans.emplace_back(q.top());
+            ans.back().algorithmMask = calcInfo.sourceMaskOf(ans.back());
             q.pop();
         }
         std::reverse(ans.begin(), ans.end());
@@ -538,5 +566,5 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
             break;
     }
 
-    return ans;
+    return result;
 }

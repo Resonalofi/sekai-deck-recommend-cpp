@@ -22,7 +22,7 @@ public:
      * @param characterId 角色ID
      * @param config 推荐设置
      */
-    std::vector<RecommendDeck> recommendChallengeLiveDeck(
+    RecommendResult recommendChallengeLiveDeck(
         int liveType,
         int characterId, 
         const DeckRecommendConfig& config

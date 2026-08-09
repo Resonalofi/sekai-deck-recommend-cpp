@@ -27,7 +27,7 @@ public:
      * @param config 推荐设置
      * @param specialCharacterId 指定的角色（用于世界开花活动支援卡组）
      */
-    std::vector<RecommendDeck> recommendEventDeck(
+    RecommendResult recommendEventDeck(
         int eventId,
         int liveType,
         const DeckRecommendConfig& config,

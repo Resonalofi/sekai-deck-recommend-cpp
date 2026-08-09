@@ -1,7 +1,12 @@
 from importlib.resources import files
 
 import sekai_deck_recommend_cpp
-from sekai_deck_recommend_cpp import DeckRecommendOptions, SekaiDeckRecommend
+from sekai_deck_recommend_cpp import (
+    DeckRecommendOptions,
+    DeckRecommendResult,
+    RecommendDeck,
+    SekaiDeckRecommend,
+)
 
 
 def main() -> None:
@@ -19,6 +24,18 @@ def main() -> None:
         "world_bloom_event_group": 1,
     }
     assert DeckRecommendOptions.from_dict(options.to_dict()).to_dict() == options.to_dict()
+
+    options.algorithms = ["dfs", "ga"]
+    options.parallel_algorithms = True
+    assert DeckRecommendOptions.from_dict(options.to_dict()).to_dict() == options.to_dict()
+
+    # 引擎侧计时与来源算法随结果返回
+    result = DeckRecommendResult()
+    assert result.total_ms == 0.0
+    assert result.algorithm_ms == {}
+    assert result.to_dict() == {"decks": [], "total_ms": 0.0, "algorithm_ms": {}}
+    assert RecommendDeck().algorithms == []
+    assert DeckRecommendResult.from_dict(result.to_dict()).to_dict() == result.to_dict()
 
     engine = SekaiDeckRecommend()
     try:

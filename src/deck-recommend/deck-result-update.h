@@ -31,6 +31,8 @@ struct RecommendDeck : DeckDetail {
     double targetValue;
     // Mysekai活动点数
     int mysekaiEventPoint;
+    // 找出这一队的算法集合（按 RecommendAlgorithm 取值置位），取出结果时才填
+    uint32_t algorithmMask = 0;
 
     RecommendDeck() = default;
 
@@ -96,8 +98,9 @@ struct RecommendCalcInfo {
     int timeout_check_count = 0;
     bool is_timeout = false;
     std::priority_queue<RecommendDeck, std::vector<RecommendDeck>, std::greater<>> deckQueue = {};
+    // 已出现过的卡组哈希；DFS/GA 的每个候选都要查一次，保持紧凑
     std::unordered_set<uint64_t> deckQueueHashSet = {};
-    
+
     std::vector<const CardDetail*> deckCards = {};
     std::bitset<32> deckCharacters = 0;
     uint16_t deckCommonUnitMask = 0;
@@ -112,13 +115,26 @@ struct RecommendCalcInfo {
     // 首张卡兼容候选列表缓冲，仅深度 cIndex+1 构建，复用避免逐节点分配
     std::vector<const CardDetail*> compatibleScratch{};
 
+    // 以下几项与 DFS 递归状态无关，放在结构体末尾，避免挤走上面这些热字段的偏移
+    // 与 deckQueueHashSet 同键，记录找出该卡组的算法集合
+    std::unordered_map<uint64_t, uint32_t> deckSourceMasks = {};
+    // 当前正在运行的算法的置位，由 recommendHighScoreDeck 在每次运行算法前设置
+    uint32_t currentAlgorithmMask = 0;
+    // 是否需要在候选被去重时补记来源算法；只运行一个算法时来源必然是它自己，
+    // 省掉候选热路径上的第二次哈希查找
+    bool trackAlgorithmSources = false;
+
     // 添加一个新结果
     void update(const RecommendDeck &deck, int limit);
 
     // 合并另一份计算结果（用于并行运行多个算法后汇总）
     void merge(const RecommendCalcInfo &other, int limit);
 
-    bool wouldUpdate(const RecommendCandidate& candidate, int limit) const;
+    // 取出结果时查询某一队由哪些算法找出
+    uint32_t sourceMaskOf(const RecommendDeck &deck) const;
+
+    // 判断候选是否值得展开成完整结果；已存在的同一队会记上当前算法
+    bool wouldUpdate(const RecommendCandidate& candidate, int limit);
 
     // 检查是否超时
     bool isTimeout();

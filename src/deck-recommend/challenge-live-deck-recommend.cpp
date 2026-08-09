@@ -1,6 +1,6 @@
 #include "deck-recommend/challenge-live-deck-recommend.h"
 
-std::vector<RecommendDeck> ChallengeLiveDeckRecommend::recommendChallengeLiveDeck(int liveType, int characterId, const DeckRecommendConfig &config)
+RecommendResult ChallengeLiveDeckRecommend::recommendChallengeLiveDeck(int liveType, int characterId, const DeckRecommendConfig &config)
 {
     if (!Enums::LiveType::isChallenge(liveType))
         throw std::runtime_error("Invalid live type for challenge live deck recommend: " + std::to_string(liveType));

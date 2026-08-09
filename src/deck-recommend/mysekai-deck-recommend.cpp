@@ -1,6 +1,6 @@
 #include "deck-recommend/mysekai-deck-recommend.h"
 
-std::vector<RecommendDeck> MysekaiDeckRecommend::recommendMysekaiDeck(
+RecommendResult MysekaiDeckRecommend::recommendMysekaiDeck(
     int eventId, 
     const DeckRecommendConfig &config, 
     int specialCharacterId
