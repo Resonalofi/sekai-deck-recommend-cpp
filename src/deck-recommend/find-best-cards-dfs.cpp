@@ -1,5 +1,6 @@
 #include "deck-recommend/base-deck-recommend.h"
 
+#include <bit>
 #include <numeric>
 
 
