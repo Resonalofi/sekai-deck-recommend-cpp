@@ -265,6 +265,13 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
         (eventConfig.eventType == Enums::EventType::marathon ||
             eventConfig.eventType == Enums::EventType::cheerful) &&
         eventConfig.eventId == this->dataProvider.masterData->getNoEventFakeEventId(eventConfig.eventType);
+    // 无活动分数上界整枝的适用条件：分数目标、无活动、非挑战Live。
+    // 单人/自动分数按位取用各卡技能，上界只有排序后的支配关系，指定技能顺序时按位
+    // 比较不成立，故排除；多人分数只由实效聚合值决定，指定顺序也安全。
+    const bool useScoreUpperBoundPrune =
+        config.target == RecommendTarget::Score && isNoEvent &&
+        !Enums::LiveType::isChallenge(liveType) &&
+        (Enums::LiveType::isMulti(liveType) || config.liveSkillOrder != LiveSkillOrder::specific);
 
     std::vector<RecommendDeck> ans{};
     std::vector<CardDetail> cardDetails{};
@@ -398,7 +405,7 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
                 liveType, config, dfsCards, supportCards, sf,
                 calcInfo,
                 config.limit, Enums::LiveType::isChallenge(liveType), config.member, honorBonus, 
-                eventConfig.eventType, eventConfig.eventId, isNoEvent, fixedCards,
+                eventConfig.eventType, eventConfig.eventId, useScoreUpperBoundPrune, fixedCards,
                 eventConfig.eventType != Enums::EventType::world_bloom || eventConfig.eventUnit != 0
             );
         }

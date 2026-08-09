@@ -17,7 +17,7 @@ void BaseDeckRecommend::findBestCardsDFS(
     int honorBonus, 
     std::optional<int> eventType,
     std::optional<int> eventId,
-    bool isNoEvent,
+    bool useScoreUpperBoundPrune,
     const std::vector<CardDetail>& fixedCards,
     bool applySameUnitOrAttrPrune
 )
@@ -88,10 +88,9 @@ void BaseDeckRecommend::findBestCardsDFS(
         }
     }
 
-    // 无活动多人分数对综合力和技能单调；分别取严格上界后仍落后才可整枝。
-    if (cfg.target == RecommendTarget::Score && isNoEvent && !isChallengeLive &&
-        Enums::LiveType::isMulti(liveType) &&
-        int(dfsInfo.deckQueue.size()) >= limit) {
+    // 无活动分数对综合力和技能单调；分别取严格上界后仍落后才可整枝。
+    // 适用条件由调用方一次算好，见 recommendHighScoreDeck。
+    if (useScoreUpperBoundPrune && int(dfsInfo.deckQueue.size()) >= limit) {
         const int remaining = member - static_cast<int>(deckCards.size());
 
         // 候选完成条件；attrs[0]/units[0] 代表无属性/组合要求
@@ -335,7 +334,7 @@ void BaseDeckRecommend::findBestCardsDFS(
 
         findBestCardsDFS(
             liveType, cfg, *nextCards, supportCards, scoreFunc, dfsInfo,
-            limit, isChallengeLive, member, honorBonus, eventType, eventId, isNoEvent, fixedCards,
+            limit, isChallengeLive, member, honorBonus, eventType, eventId, useScoreUpperBoundPrune, fixedCards,
             applySameUnitOrAttrPrune
         );
 

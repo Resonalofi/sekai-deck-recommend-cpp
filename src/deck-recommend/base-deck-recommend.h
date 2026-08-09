@@ -165,7 +165,7 @@ public:
      * @param honorBonus 称号加成
      * @param eventType （可选）活动类型
      * @param eventId （可选）活动ID
-     * @param isNoEvent 是否为内部无活动假活动
+     * @param useScoreUpperBoundPrune 是否启用无活动分数上界整枝（调用方按目标/活动/Live类型判定）
      */
     void findBestCardsDFS(
         int liveType,
@@ -180,7 +180,7 @@ public:
         int honorBonus = 0,
         std::optional<int> eventType = std::nullopt,
         std::optional<int> eventId = std::nullopt,
-        bool isNoEvent = false,
+        bool useScoreUpperBoundPrune = false,
         const std::vector<CardDetail>& fixedCards = {},
         bool applySameUnitOrAttrPrune = true
     );
