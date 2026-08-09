@@ -115,6 +115,9 @@ struct RecommendCalcInfo {
     // 添加一个新结果
     void update(const RecommendDeck &deck, int limit);
 
+    // 合并另一份计算结果（用于并行运行多个算法后汇总）
+    void merge(const RecommendCalcInfo &other, int limit);
+
     bool wouldUpdate(const RecommendCandidate& candidate, int limit) const;
 
     // 检查是否超时

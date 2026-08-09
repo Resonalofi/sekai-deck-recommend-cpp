@@ -141,6 +141,8 @@ class DeckRecommendOptions:
     Attributes:
         target (str): Target of the recommendation in ["score", "power", "skill", "bonus"], default is "score"
         algorithm (str): "dfs" for brute force, "sa" for simulated annealing, "ga" for genetic algorithm, default is "ga"
+        algorithms (list[str]): run several algorithms and merge their results, overrides algorithm when set
+        parallel_algorithms (bool): run the algorithms of `algorithms` in parallel threads instead of one after another, default is False
         region (str): Region in ["jp", "en", "tw", "kr", "cn"]
         user_data (DeckRecommendUserData): User suite data for deck recommendation
         user_data_file_path (str): File path of user suite data json
@@ -182,6 +184,8 @@ class DeckRecommendOptions:
     """
     target: Optional[str]
     algorithm: Optional[str]
+    algorithms: Optional[list[str]]
+    parallel_algorithms: Optional[bool]
     region: str
     user_data: Optional[DeckRecommendUserData]
     user_data_file_path: Optional[str]

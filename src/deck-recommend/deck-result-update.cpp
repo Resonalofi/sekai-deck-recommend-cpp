@@ -39,6 +39,16 @@ void RecommendCalcInfo::update(const RecommendDeck &deck, int limit)
     }
 }
 
+void RecommendCalcInfo::merge(const RecommendCalcInfo &other, int limit)
+{
+    auto queue = other.deckQueue;
+    while (queue.size()) {
+        update(queue.top(), limit);
+        queue.pop();
+    }
+    is_timeout |= other.is_timeout;
+}
+
 bool RecommendCalcInfo::wouldUpdate(const RecommendCandidate& candidate, int limit) const
 {
     if (int(deckQueue.size()) >= limit) {

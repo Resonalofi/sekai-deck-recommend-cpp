@@ -1,8 +1,100 @@
 #include "deck-recommend/base-deck-recommend.h"
 #include "card-priority/card-priority-filter.h"
 #include "common/timer.h"
+#include <algorithm>
 #include <chrono>
 #include <random>
+#include <thread>
+
+
+void BaseDeckRecommend::runRecommendAlgorithm(
+    RecommendAlgorithm algorithm,
+    int liveType,
+    const DeckRecommendConfig& config,
+    const EventConfig& eventConfig,
+    const std::vector<CardDetail>& pool,
+    std::map<int, std::vector<SupportDeckCard>>& supportCards,
+    const std::function<Score(const DeckScoreDetail&)>& scoreFunc,
+    RecommendCalcInfo& info,
+    int honorBonus,
+    const std::vector<CardDetail>& fixedCards
+) {
+    const bool isChallengeLive = Enums::LiveType::isChallenge(liveType);
+
+    if (algorithm == RecommendAlgorithm::SA) {
+        // 使用模拟退火
+        long long seed = config.saSeed;
+        if (seed == -1)
+            seed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+
+        auto rng = Rng(seed);
+        for (int i = 0; i < config.saRunCount && !info.isTimeout(); i++) {
+            findBestCardsSA(
+                liveType, config, rng, pool, supportCards, scoreFunc,
+                info,
+                config.limit, isChallengeLive, config.member, honorBonus,
+                eventConfig.eventType, eventConfig.eventId, fixedCards
+            );
+        }
+        return;
+    }
+
+    if (algorithm == RecommendAlgorithm::GA) {
+        // 使用遗传算法
+        long long seed = config.gaSeed;
+        if (seed == -1)
+            seed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+
+        auto rng = Rng(seed);
+        findBestCardsGA(
+            liveType, config, rng, pool, supportCards, scoreFunc,
+            info,
+            config.limit, isChallengeLive, config.member, honorBonus,
+            eventConfig.eventType, eventConfig.eventId, fixedCards
+        );
+        return;
+    }
+
+    if (algorithm == RecommendAlgorithm::DFS) {
+        // 使用DFS
+        info.deckCards.clear();
+        info.deckCharacters = 0;
+        info.deckCommonUnitMask = (uint16_t{1} << UNIT_MAX) - 1;
+        info.deckAllSameAttr = true;
+        info.deckMixedUnitPowerTotals = {};
+        std::vector<const CardDetail*> dfsCards;
+        dfsCards.reserve(pool.size());
+        for (const auto& card : pool)
+            dfsCards.push_back(&card);
+
+        // 插入固定卡牌
+        for (const auto& card : fixedCards) {
+            if (info.deckCards.empty())
+                info.deckAttr = card.attr;
+            else
+                info.deckAllSameAttr &= card.attr == info.deckAttr;
+            info.deckCommonUnitMask &= card.unitMask;
+            for (int sameAttr = 0; sameAttr < 2; ++sameAttr) {
+                info.deckMixedUnitPowerTotals[sameAttr] += std::max(
+                    card.powerTotals[0][sameAttr], card.powerTotals[1][sameAttr]
+                );
+            }
+            info.deckCards.push_back(&card);
+            info.deckCharacters.flip(card.characterId);
+        }
+
+        findBestCardsDFS(
+            liveType, config, dfsCards, supportCards, scoreFunc,
+            info,
+            config.limit, isChallengeLive, config.member, honorBonus,
+            eventConfig.eventType, eventConfig.eventId, fixedCards,
+            eventConfig.eventType != Enums::EventType::world_bloom || eventConfig.eventUnit != 0
+        );
+        return;
+    }
+
+    throw std::runtime_error("Unknown algorithm: " + std::to_string(int(algorithm)));
+}
 
 
 uint64_t BaseDeckRecommend::calcDeckHash(const std::vector<const CardDetail*>& deck) {
@@ -304,11 +396,23 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
         }
     }
 
+    // 组合算法：algorithms 非空时忽略 algorithm，否则退化为单算法
+    std::vector<RecommendAlgorithm> algorithms = config.algorithms;
+    if (algorithms.empty())
+        algorithms.push_back(config.algorithm);
+#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+    // 单线程 WASM 构建没有线程支持，并行退化为串行
+    const bool runAlgorithmsInParallel = false;
+#else
+    const bool runAlgorithmsInParallel = config.parallelAlgorithms && algorithms.size() > 1;
+#endif
+
     // 指定活动加成组卡
     if (config.target == RecommendTarget::Bonus) {
-        if (eventConfig.eventType == 0) 
+        if (eventConfig.eventType == 0)
             throw std::runtime_error("Bonus target requires event");
-        if (config.algorithm != RecommendAlgorithm::DFS) 
+        if (std::any_of(algorithms.begin(), algorithms.end(),
+                [](RecommendAlgorithm it) { return it != RecommendAlgorithm::DFS; }))
             throw std::runtime_error("Bonus target only supports DFS algorithm");
 
         // WL和普通活动采用不同代码
@@ -337,8 +441,32 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
     }
 
     // 最优化组卡
+    auto sortByStrength = [&config](std::vector<CardDetail>& target) {
+        // 卡牌大致按强度排序，保证dfs先遍历强度高的卡组
+        if (config.target == RecommendTarget::Skill) {
+            std::sort(target.begin(), target.end(), [](const CardDetail& a, const CardDetail& b) {
+                return std::make_tuple(a.skill.max, a.skill.min, a.cardId) > std::make_tuple(b.skill.max, b.skill.min, b.cardId);
+            });
+        } else {
+            std::sort(target.begin(), target.end(), [](const CardDetail& a, const CardDetail& b) {
+                return std::make_tuple(a.power.max, a.power.min, a.cardId) > std::make_tuple(b.power.max, b.power.min, b.cardId);
+            });
+        }
+    };
+
+    const bool usesDfs = std::any_of(algorithms.begin(), algorithms.end(),
+        [](RecommendAlgorithm it) { return it == RecommendAlgorithm::DFS; });
+    const bool usesRandomized = std::any_of(algorithms.begin(), algorithms.end(),
+        [](RecommendAlgorithm it) { return it != RecommendAlgorithm::DFS; });
+    // 随机化算法用全部卡牌，DFS 用按优先级筛选后的卡牌；两者的卡池都只排一次
+    std::vector<CardDetail> randomizedPool{};
+    if (usesRandomized) {
+        randomizedPool = cards;
+        sortByStrength(randomizedPool);
+    }
+
     while (true) {
-        if (config.algorithm == RecommendAlgorithm::DFS) {
+        if (usesDfs) {
             // DFS 为了优化性能，会根据活动加成和卡牌稀有度优先级筛选卡牌
             cardDetails = filterCardPriority(liveType, eventConfig.eventType, cards, preCardDetails, config.member);
         } else {
@@ -353,88 +481,52 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
         }
         preCardDetails = cardDetails;
         auto cardsSortedByStrength = cardDetails;
+        sortByStrength(cardsSortedByStrength);
 
-        // 卡牌大致按强度排序，保证dfs先遍历强度高的卡组
-        if (config.target == RecommendTarget::Skill) {
-            std::sort(cardsSortedByStrength.begin(), cardsSortedByStrength.end(), [](const CardDetail& a, const CardDetail& b) { 
-                return std::make_tuple(a.skill.max, a.skill.min, a.cardId) > std::make_tuple(b.skill.max, b.skill.min, b.cardId);
-            });
-        } else {
-            std::sort(cardsSortedByStrength.begin(), cardsSortedByStrength.end(), [](const CardDetail& a, const CardDetail& b) { 
-                return std::make_tuple(a.power.max, a.power.min, a.cardId) > std::make_tuple(b.power.max, b.power.min, b.cardId);
-            });
-        }
+        auto poolFor = [&](RecommendAlgorithm algorithm) -> const std::vector<CardDetail>& {
+            return algorithm == RecommendAlgorithm::DFS ? cardsSortedByStrength : randomizedPool;
+        };
 
-        if (config.algorithm == RecommendAlgorithm::SA) {
-            // 使用模拟退火
-            long long seed = config.saSeed;
-            if (seed == -1) 
-                seed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-    
-            auto rng = Rng(seed);
-            for (int i = 0; i < config.saRunCount && !calcInfo.isTimeout(); i++) {
-                findBestCardsSA(
-                    liveType, config, rng, cardsSortedByStrength, supportCards, sf,
-                    calcInfo,
-                    config.limit, Enums::LiveType::isChallenge(liveType), config.member, honorBonus,
-                    eventConfig.eventType, eventConfig.eventId, fixedCards
-                );
-            }
-        } 
-        else if (config.algorithm == RecommendAlgorithm::GA) {
-            // 使用遗传算法
-            long long seed = config.gaSeed;
-            if (seed == -1) 
-                seed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-
-            auto rng = Rng(seed);
-            findBestCardsGA(
-                liveType, config, rng, cardsSortedByStrength, supportCards, sf,
-                calcInfo,
-                config.limit, Enums::LiveType::isChallenge(liveType), config.member, honorBonus,
-                eventConfig.eventType, eventConfig.eventId, fixedCards
+        if (runAlgorithmsInParallel) {
+            // 并行：每个算法一份独立的引擎、支援卡组与计算信息，结束后合并结果
+            std::vector<BaseDeckRecommend> engines(algorithms.size(), *this);
+            std::vector<std::map<int, std::vector<SupportDeckCard>>> algorithmSupportCards(
+                algorithms.size(), supportCards
             );
-        }
-        else if (config.algorithm == RecommendAlgorithm::DFS) {
-            // 使用DFS
-            calcInfo.deckCards.clear();
-            calcInfo.deckCharacters = 0;
-            calcInfo.deckCommonUnitMask = (uint16_t{1} << UNIT_MAX) - 1;
-            calcInfo.deckAllSameAttr = true;
-            calcInfo.deckMixedUnitPowerTotals = {};
-            std::vector<const CardDetail*> dfsCards;
-            dfsCards.reserve(cardsSortedByStrength.size());
-            for (const auto& card : cardsSortedByStrength)
-                dfsCards.push_back(&card);
-
-            // 插入固定卡牌
-            for (const auto& card : fixedCards) {
-                if (calcInfo.deckCards.empty())
-                    calcInfo.deckAttr = card.attr;
-                else
-                    calcInfo.deckAllSameAttr &= card.attr == calcInfo.deckAttr;
-                calcInfo.deckCommonUnitMask &= card.unitMask;
-                for (int sameAttr = 0; sameAttr < 2; ++sameAttr) {
-                    calcInfo.deckMixedUnitPowerTotals[sameAttr] += std::max(
-                        card.powerTotals[0][sameAttr], card.powerTotals[1][sameAttr]
-                    );
-                }
-                calcInfo.deckCards.push_back(&card);
-                calcInfo.deckCharacters.flip(card.characterId);
+            std::vector<RecommendCalcInfo> infos(algorithms.size(), calcInfo);
+            std::vector<std::exception_ptr> errors(algorithms.size());
+            std::vector<std::thread> threads{};
+            threads.reserve(algorithms.size());
+            for (size_t i = 0; i < algorithms.size(); ++i) {
+                threads.emplace_back([&, i] {
+                    try {
+                        engines[i].runRecommendAlgorithm(
+                            algorithms[i], liveType, config, eventConfig, poolFor(algorithms[i]),
+                            algorithmSupportCards[i], sf, infos[i], honorBonus, fixedCards
+                        );
+                    }
+                    catch (...) {
+                        errors[i] = std::current_exception();
+                    }
+                });
             }
-
-            findBestCardsDFS(
-                liveType, config, dfsCards, supportCards, sf,
-                calcInfo,
-                config.limit, Enums::LiveType::isChallenge(liveType), config.member, honorBonus, 
-                eventConfig.eventType, eventConfig.eventId, fixedCards,
-                eventConfig.eventType != Enums::EventType::world_bloom || eventConfig.eventUnit != 0
-            );
+            for (auto& thread : threads)
+                thread.join();
+            for (const auto& error : errors)
+                if (error) std::rethrow_exception(error);
+            for (const auto& info : infos)
+                calcInfo.merge(info, config.limit);
         }
         else {
-            throw std::runtime_error("Unknown algorithm: " + std::to_string(int(config.algorithm)));
+            // 串行：共用同一份结果，后跑的算法可以直接用已有最优解剪枝
+            for (const auto algorithm : algorithms) {
+                runRecommendAlgorithm(
+                    algorithm, liveType, config, eventConfig, poolFor(algorithm),
+                    supportCards, sf, calcInfo, honorBonus, fixedCards
+                );
+            }
         }
-        
+
         ans.clear();
         auto q = calcInfo.deckQueue;
         while (q.size()) {
@@ -442,7 +534,7 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
             q.pop();
         }
         std::reverse(ans.begin(), ans.end());
-        if (int(ans.size()) >= config.limit || calcInfo.isTimeout()) 
+        if (int(ans.size()) >= config.limit || calcInfo.isTimeout())
             break;
     }
 

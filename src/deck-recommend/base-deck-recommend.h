@@ -36,7 +36,13 @@ struct DeckRecommendConfig {
     bool filterOtherUnit = false; 
 
     // 推荐算法
-    RecommendAlgorithm algorithm = RecommendAlgorithm::SA; 
+    RecommendAlgorithm algorithm = RecommendAlgorithm::SA;
+
+    // 组合算法：非空时忽略 algorithm，依次或并行运行列出的算法并合并结果
+    std::vector<RecommendAlgorithm> algorithms = {};
+
+    // 组合算法是否并行运行（各算法独立搜索后汇总；串行时后跑的算法能复用已有最优解剪枝）
+    bool parallelAlgorithms = false;
 
     // 推荐优化目标
     RecommendTarget target = RecommendTarget::Score;
@@ -279,6 +285,24 @@ public:
         int member = 5,
         std::optional<int> eventType = std::nullopt,
         std::optional<int> eventId = std::nullopt
+    );
+
+    /**
+     * 运行单个推荐算法，把结果写入给定的计算信息
+     * 并行组合算法时每个线程持有独立的引擎副本、支援卡组副本与计算信息
+     * @param pool 该算法使用的候选卡牌（已按强度排序）
+     */
+    void runRecommendAlgorithm(
+        RecommendAlgorithm algorithm,
+        int liveType,
+        const DeckRecommendConfig& config,
+        const EventConfig& eventConfig,
+        const std::vector<CardDetail>& pool,
+        std::map<int, std::vector<SupportDeckCard>>& supportCards,
+        const std::function<Score(const DeckScoreDetail&)>& scoreFunc,
+        RecommendCalcInfo& info,
+        int honorBonus,
+        const std::vector<CardDetail>& fixedCards
     );
 
     /**

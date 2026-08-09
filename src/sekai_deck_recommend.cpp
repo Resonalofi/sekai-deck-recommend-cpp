@@ -3,6 +3,7 @@
 #include "deck-recommend/mysekai-deck-recommend.h"
 #include "data-provider/static-data.h"
 
+#include <algorithm>
 #include <iostream>
 #include <chrono>
 #include <fstream>
@@ -279,6 +280,8 @@ struct PyGaOptions {
 struct PyDeckRecommendOptions {
     std::optional<std::string> target;
     std::optional<std::string> algorithm;
+    std::optional<std::vector<std::string>> algorithms;
+    std::optional<bool> parallel_algorithms;
     std::optional<std::string> region;
     std::optional<std::string> user_data_file_path;
     std::optional<std::string> user_data_str;
@@ -325,6 +328,8 @@ struct PyDeckRecommendOptions {
         py::dict result;
         if (target.has_value())                result["target"] = target.value();
         if (algorithm.has_value())             result["algorithm"] = algorithm.value();
+        if (algorithms.has_value())            result["algorithms"] = algorithms.value();
+        if (parallel_algorithms.has_value())   result["parallel_algorithms"] = parallel_algorithms.value();
         if (region.has_value())                result["region"] = region.value();
         if (user_data_file_path.has_value())   result["user_data_file_path"] = user_data_file_path.value();
         if (user_data_str.has_value())         result["user_data_str"] = user_data_str.value();       
@@ -398,6 +403,8 @@ struct PyDeckRecommendOptions {
         PyDeckRecommendOptions options;
         if (dict.contains("target"))                options.target = dict["target"].cast<std::string>();
         if (dict.contains("algorithm"))             options.algorithm = dict["algorithm"].cast<std::string>();
+        if (dict.contains("algorithms"))            options.algorithms = dict["algorithms"].cast<std::vector<std::string>>();
+        if (dict.contains("parallel_algorithms"))   options.parallel_algorithms = dict["parallel_algorithms"].cast<bool>();
         if (dict.contains("region"))                options.region = dict["region"].cast<std::string>();
         if (dict.contains("user_data_file_path"))   options.user_data_file_path = dict["user_data_file_path"].cast<std::string>();
         if (dict.contains("user_data_str"))         options.user_data_str = dict["user_data_str"].cast<py::bytes>();
@@ -812,6 +819,24 @@ class SekaiDeckRecommend {
             else if (algorithm == "ga")
                 config.algorithm = RecommendAlgorithm::GA;
 
+            // algorithms（组合算法，非空时忽略 algorithm）
+            if (pyoptions.algorithms.has_value()) {
+                for (const auto& name : pyoptions.algorithms.value()) {
+                    if (!VALID_ALGORITHMS.count(name))
+                        throw std::invalid_argument("Invalid algorithm: " + name);
+                    auto parsed = name == "sa" ? RecommendAlgorithm::SA
+                        : name == "dfs" ? RecommendAlgorithm::DFS : RecommendAlgorithm::GA;
+                    if (std::find(config.algorithms.begin(), config.algorithms.end(), parsed)
+                        != config.algorithms.end())
+                        throw std::invalid_argument("Duplicated algorithm: " + name);
+                    config.algorithms.push_back(parsed);
+                }
+                if (config.algorithms.empty())
+                    throw std::invalid_argument("algorithms must not be empty.");
+            }
+            if (pyoptions.parallel_algorithms.has_value())
+                config.parallelAlgorithms = pyoptions.parallel_algorithms.value();
+
             // filter other unit
             if (pyoptions.filter_other_unit.has_value()) {
                 config.filterOtherUnit = pyoptions.filter_other_unit.value();
@@ -1012,8 +1037,15 @@ class SekaiDeckRecommend {
                 }
             }
 
+            const auto usesAlgorithm = [&config](RecommendAlgorithm it) {
+                return config.algorithms.empty()
+                    ? config.algorithm == it
+                    : std::find(config.algorithms.begin(), config.algorithms.end(), it)
+                        != config.algorithms.end();
+            };
+
             // sa config
-            if (config.algorithm == RecommendAlgorithm::SA && pyoptions.sa_options.has_value()) {
+            if (usesAlgorithm(RecommendAlgorithm::SA) && pyoptions.sa_options.has_value()) {
                 auto sa_options = pyoptions.sa_options.value();
 
                 if (sa_options.run_num.has_value())
@@ -1054,7 +1086,7 @@ class SekaiDeckRecommend {
             }
 
             // ga config
-            if (config.algorithm == RecommendAlgorithm::GA && pyoptions.ga_options.has_value()) {
+            if (usesAlgorithm(RecommendAlgorithm::GA) && pyoptions.ga_options.has_value()) {
                 auto ga_options = pyoptions.ga_options.value();
 
                 if (ga_options.seed.has_value())
@@ -1374,6 +1406,8 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
         .def_static("from_dict", &PyDeckRecommendOptions::from_dict)
         .def_readwrite("target", &PyDeckRecommendOptions::target)
         .def_readwrite("algorithm", &PyDeckRecommendOptions::algorithm)
+        .def_readwrite("algorithms", &PyDeckRecommendOptions::algorithms)
+        .def_readwrite("parallel_algorithms", &PyDeckRecommendOptions::parallel_algorithms)
         .def_readwrite("region", &PyDeckRecommendOptions::region)
         .def_readwrite("user_data_file_path", &PyDeckRecommendOptions::user_data_file_path)
         .def_readwrite("user_data_str", &PyDeckRecommendOptions::user_data_str)
@@ -1546,6 +1580,8 @@ PyDeckRecommendOptions optionsFromJson(const json& data, const std::string& user
     PyDeckRecommendOptions options;
     readOptional(data, "target", options.target);
     readOptional(data, "algorithm", options.algorithm);
+    readOptional(data, "algorithms", options.algorithms);
+    readOptional(data, "parallel_algorithms", options.parallel_algorithms);
     readOptional(data, "region", options.region);
     options.user_data_str = userData;
     readOptional(data, "live_type", options.live_type);
