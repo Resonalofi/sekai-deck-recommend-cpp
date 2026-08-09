@@ -92,6 +92,10 @@ struct RecommendCalcInfo {
     bool deckAllSameAttr = true;
     std::array<int, 2> deckMixedUnitPowerTotals{};
     std::unordered_map<uint64_t, double> deckTargetValueMap{};
+    // 无活动剪枝的 (属性,组合)x角色 综合力聚合缓冲，复用避免逐节点分配
+    std::vector<int> prunePowerScratch{};
+    // 首张卡兼容候选列表缓冲，仅深度 cIndex+1 构建，复用避免逐节点分配
+    std::vector<const CardDetail*> compatibleScratch{};
 
     // 添加一个新结果
     void update(const RecommendDeck &deck, int limit);
