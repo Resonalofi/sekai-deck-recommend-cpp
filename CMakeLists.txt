@@ -23,10 +23,12 @@ if (EMSCRIPTEN)
         -Wextra
         -Wuninitialized
         -fexceptions
+        -flto
     )
     target_link_options(sekai_deck_recommend_wasm PRIVATE
         --bind
         -fexceptions
+        -flto
         "-sALLOW_MEMORY_GROWTH=1"
         "-sDISABLE_EXCEPTION_CATCHING=0"
         "-sENVIRONMENT=web,worker"
