@@ -368,7 +368,8 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
     RecommendResult result{};
     auto& ans = result.decks;
     std::vector<CardDetail> cardDetails{};
-    std::vector<CardDetail> preCardDetails{};
+    // 只用得到上一轮筛选出的卡牌数量，不必留一份 CardDetail 副本（804 张卡 1.17MiB）
+    size_t preCardCount = 0;
     auto sf = [&scoreFunc, &musicMeta](const DeckScoreDetail& deckDetail) { return scoreFunc(musicMeta, deckDetail); };
 
     RecommendCalcInfo calcInfo{};
@@ -484,22 +485,25 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
     }
 
     while (true) {
+        size_t cardCount = cards.size();
         if (usesDfs) {
             // DFS 为了优化性能，会根据活动加成和卡牌稀有度优先级筛选卡牌
-            cardDetails = filterCardPriority(liveType, eventConfig.eventType, cards, preCardDetails, config.member);
-        } else {
-            // 如果使用随机化算法不需要过滤
-            cardDetails = cards;
+            cardDetails = filterCardPriority(liveType, eventConfig.eventType, cards, preCardCount, config.member);
+            cardCount = cardDetails.size();
         }
-        if (cardDetails.size() == preCardDetails.size()) {
+        // 随机化算法不需要过滤，直接用全部卡牌排序后的 randomizedPool
+        if (cardCount == preCardCount) {
             if (ans.empty())    // 如果所有卡牌都上阵了还是组不出队伍，就报错
                 throw std::runtime_error("Cannot recommend any deck in " + std::to_string(cards.size()) + " cards");
             else    // 返回上次组出的队伍
                 break;
         }
-        preCardDetails = cardDetails;
-        auto cardsSortedByStrength = cardDetails;
-        sortByStrength(cardsSortedByStrength);
+        preCardCount = cardCount;
+        std::vector<CardDetail> cardsSortedByStrength{};
+        if (usesDfs) {
+            cardsSortedByStrength = cardDetails;
+            sortByStrength(cardsSortedByStrength);
+        }
 
         auto poolFor = [&](RecommendAlgorithm algorithm) -> const std::vector<CardDetail>& {
             return algorithm == RecommendAlgorithm::DFS ? cardsSortedByStrength : randomizedPool;

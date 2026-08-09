@@ -64,14 +64,14 @@ bool canMakeDeck(
  * @param liveType Live类型
  * @param eventType 活动类型
  * @param cardDetails 卡牌
- * @param preCardDetails 上一次的卡牌，保证返回卡牌数量大于等于它，且能组成队伍
+ * @param preCardCount 上一次筛选出的卡牌数量，保证返回卡牌数量大于它，且能组成队伍
  * @param member 卡组成员限制
  */
 std::vector<CardDetail> filterCardPriority(
     int liveType,
     int eventType,
     std::vector<CardDetail>& cardDetails,
-    std::vector<CardDetail>& preCardDetails,
+    size_t preCardCount,
     int member = 5
 );
 

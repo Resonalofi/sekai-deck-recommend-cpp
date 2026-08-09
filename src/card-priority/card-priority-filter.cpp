@@ -131,7 +131,7 @@ bool canMakeDeck(int liveType, int eventType, std::vector<CardDetail> &cardDetai
     }
 }
 
-std::vector<CardDetail> filterCardPriority(int liveType, int eventType, std::vector<CardDetail> &cardDetails, std::vector<CardDetail> &preCardDetails, int member)
+std::vector<CardDetail> filterCardPriority(int liveType, int eventType, std::vector<CardDetail> &cardDetails, size_t preCardCount, int member)
 {
     auto cardPriorities = getCardPriorities(liveType, eventType);
     std::vector<CardDetail> cards{};
@@ -140,7 +140,7 @@ std::vector<CardDetail> filterCardPriority(int liveType, int eventType, std::vec
     for (const auto &cardPriority : cardPriorities) {
         // 检查是否已经是符合优先级条件的完整卡组
         // 因为同一个优先级可能有不止一个情况，所以要等遍历到下个优先级后才能决定是否返回
-        if (cardPriority.priority > latestPriority && cards.size() > preCardDetails.size() && canMakeDeck(liveType, eventType, cards, member)) {
+        if (cardPriority.priority > latestPriority && cards.size() > preCardCount && canMakeDeck(liveType, eventType, cards, member)) {
             return cards;
         }
         latestPriority = cardPriority.priority;
