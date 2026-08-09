@@ -76,6 +76,19 @@ struct RecommendCandidate {
 };
 
 
+// 分数上界整枝所需的、与递归节点无关的预计算量
+struct ScoreUpperBoundInfo {
+    bool enabled = false;
+    // 卡池里是否存在非零活动加成；无活动时为 false，可整块跳过加成上界的聚合
+    bool hasEventBonus = false;
+    // WL 异色加成上界，取加成表中的最大档（非 WL 为 0）
+    double diffAttrBonus = 0.0;
+    // 支援卡组加成上界，取排序后前 N 张之和（非 WL 为 0）
+    // 实际值还要排除主队伍里的卡，只会更小
+    double supportDeckBonus = 0.0;
+};
+
+
 // 存储卡组推荐计算的结果以及过程中需要记录的信息
 struct RecommendCalcInfo {
     long long start_ts = 0;
@@ -92,6 +105,8 @@ struct RecommendCalcInfo {
     bool deckAllSameAttr = true;
     std::array<int, 2> deckMixedUnitPowerTotals{};
     std::unordered_map<uint64_t, double> deckTargetValueMap{};
+    // 分数上界整枝的预计算量，由 recommendHighScoreDeck 一次算好
+    ScoreUpperBoundInfo scoreBound{};
     // 无活动剪枝的 (属性,组合)x角色 综合力聚合缓冲，复用避免逐节点分配
     std::vector<int> prunePowerScratch{};
     // 首张卡兼容候选列表缓冲，仅深度 cIndex+1 构建，复用避免逐节点分配

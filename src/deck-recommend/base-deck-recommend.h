@@ -101,7 +101,7 @@ struct BestPermutationResult {
     double maxTargetValue = 0.0;
     double maxMultiLiveScoreUp = 0.0;
 };
-  
+
 
 class BaseDeckRecommend {
     
@@ -158,14 +158,7 @@ public:
      * @param cardDetails 参与计算的卡牌
      * @param supportCards 每个对应角色的排序后的支援队伍卡牌
      * @param scoreFunc 获得分数的公式
-     * @param dfsInfo DFS信息
-     * @param limit 需要推荐的卡组数量（按分数高到低）
-     * @param isChallengeLive 是否挑战Live（人员可重复）
-     * @param member 人数限制（2-5、默认5）
-     * @param honorBonus 称号加成
-     * @param eventType （可选）活动类型
-     * @param eventId （可选）活动ID
-     * @param useScoreUpperBoundPrune 是否启用无活动分数上界整枝（调用方按目标/活动/Live类型判定）
+     * @param dfsInfo DFS信息（含分数上界整枝的预计算量）
      */
     void findBestCardsDFS(
         int liveType,
@@ -180,7 +173,6 @@ public:
         int honorBonus = 0,
         std::optional<int> eventType = std::nullopt,
         std::optional<int> eventId = std::nullopt,
-        bool useScoreUpperBoundPrune = false,
         const std::vector<CardDetail>& fixedCards = {},
         bool applySameUnitOrAttrPrune = true
     );

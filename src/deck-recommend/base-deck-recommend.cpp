@@ -261,17 +261,6 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
     }
 
     auto honorBonus = deckCalculator.getHonorBonusPower();
-    const bool isNoEvent =
-        (eventConfig.eventType == Enums::EventType::marathon ||
-            eventConfig.eventType == Enums::EventType::cheerful) &&
-        eventConfig.eventId == this->dataProvider.masterData->getNoEventFakeEventId(eventConfig.eventType);
-    // 无活动分数上界整枝的适用条件：分数目标、无活动、非挑战Live。
-    // 单人/自动分数按位取用各卡技能，上界只有排序后的支配关系，指定技能顺序时按位
-    // 比较不成立，故排除；多人分数只由实效聚合值决定，指定顺序也安全。
-    const bool useScoreUpperBoundPrune =
-        config.target == RecommendTarget::Score && isNoEvent &&
-        !Enums::LiveType::isChallenge(liveType) &&
-        (Enums::LiveType::isMulti(liveType) || config.liveSkillOrder != LiveSkillOrder::specific);
 
     std::vector<RecommendDeck> ans{};
     std::vector<CardDetail> cardDetails{};
@@ -281,6 +270,39 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
     RecommendCalcInfo calcInfo{};
     calcInfo.start_ts = std::chrono::high_resolution_clock::now().time_since_epoch().count();
     calcInfo.timeout = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::milliseconds(config.timeout_ms)).count();
+
+    // 分数上界整枝的适用条件：分数目标、非挑战Live。
+    // 单人/自动分数按位取用各卡技能，上界只有排序后的支配关系，指定技能顺序时按位
+    // 比较不成立，故排除；多人分数只由实效聚合值决定，指定顺序也安全。
+    auto& scoreBound = calcInfo.scoreBound;
+    scoreBound.enabled =
+        config.target == RecommendTarget::Score &&
+        !Enums::LiveType::isChallenge(liveType) &&
+        (Enums::LiveType::isMulti(liveType) || config.liveSkillOrder != LiveSkillOrder::specific);
+    if (scoreBound.enabled) {
+        for (const auto& card : cards) {
+            if (card.maxEventBonus.value_or(0.0) > 0.0) {
+                scoreBound.hasEventBonus = true;
+                break;
+            }
+        }
+    }
+    if (scoreBound.enabled && eventConfig.eventType == Enums::EventType::world_bloom) {
+        // 异色加成取加成表最大档
+        for (const auto& it : this->dataProvider.masterData->worldBloomDifferentAttributeBonuses)
+            scoreBound.diffAttrBonus = std::max(scoreBound.diffAttrBonus, it.bonusRate);
+        // 异色加成也要计入加成上界
+        scoreBound.hasEventBonus |= scoreBound.diffAttrBonus > 0.0;
+        // 支援加成取每组排序后前 N 张之和的最大值；实际值还要排除主队伍卡牌，只会更小
+        int supportDeckCount = deckCalculator.getWorldBloomSupportDeckCount(eventConfig.eventId);
+        for (const auto& [characterId, sortedSupportCards] : supportCards) {
+            double bonus = 0;
+            int count = std::min(supportDeckCount, int(sortedSupportCards.size()));
+            for (int i = 0; i < count; ++i)
+                bonus += sortedSupportCards[i].bonus;
+            scoreBound.supportDeckBonus = std::max(scoreBound.supportDeckBonus, bonus);
+        }
+    }
 
     // 指定活动加成组卡
     if (config.target == RecommendTarget::Bonus) {
@@ -405,7 +427,7 @@ std::vector<RecommendDeck> BaseDeckRecommend::recommendHighScoreDeck(
                 liveType, config, dfsCards, supportCards, sf,
                 calcInfo,
                 config.limit, Enums::LiveType::isChallenge(liveType), config.member, honorBonus, 
-                eventConfig.eventType, eventConfig.eventId, useScoreUpperBoundPrune, fixedCards,
+                eventConfig.eventType, eventConfig.eventId, fixedCards,
                 eventConfig.eventType != Enums::EventType::world_bloom || eventConfig.eventUnit != 0
             );
         }

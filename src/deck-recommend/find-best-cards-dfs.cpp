@@ -17,7 +17,6 @@ void BaseDeckRecommend::findBestCardsDFS(
     int honorBonus, 
     std::optional<int> eventType,
     std::optional<int> eventId,
-    bool useScoreUpperBoundPrune,
     const std::vector<CardDetail>& fixedCards,
     bool applySameUnitOrAttrPrune
 )
@@ -88,9 +87,9 @@ void BaseDeckRecommend::findBestCardsDFS(
         }
     }
 
-    // 无活动分数对综合力和技能单调；分别取严格上界后仍落后才可整枝。
-    // 适用条件由调用方一次算好，见 recommendHighScoreDeck。
-    if (useScoreUpperBoundPrune && int(dfsInfo.deckQueue.size()) >= limit) {
+    // 分数对综合力、技能和活动加成单调；分别取严格上界后仍落后才可整枝。
+    // 适用条件与与节点无关的加成上界由调用方一次算好，见 recommendHighScoreDeck。
+    if (dfsInfo.scoreBound.enabled && int(dfsInfo.deckQueue.size()) >= limit) {
         const int remaining = member - static_cast<int>(deckCards.size());
 
         // 候选完成条件；attrs[0]/units[0] 代表无属性/组合要求
@@ -212,9 +211,43 @@ void BaseDeckRecommend::findBestCardsDFS(
             skillBounds[skillBoundCount++] = availableSkillBounds[i];
         std::sort(skillBounds.begin(), skillBounds.begin() + skillBoundCount, std::greater<>());
 
+        // 活动加成上界：队内卡按实际最大加成累加，空位取剩余角色中加成最大的几个。
+        // 终章的扣减与当期上限、以及缺失加成时整队归零，都只会让实际值更小。
+        // maxEventBonus 与综合力/技能不在同一批缓存行，无活动时整块跳过。
+        double bonusBound = 0.0;
+        if (dfsInfo.scoreBound.hasEventBonus) {
+            bonusBound = dfsInfo.scoreBound.diffAttrBonus;
+            for (const auto* card : deckCards)
+                bonusBound += card->maxEventBonus.value_or(0.0);
+            std::array<double, 32> charBonus{};
+            for (const auto* card : cardDetails) {
+                if (deckCharacters.test(card->characterId))
+                    continue;
+                charBonus[card->characterId] = std::max(
+                    charBonus[card->characterId], card->maxEventBonus.value_or(0.0)
+                );
+            }
+            std::array<double, 32> availableBonuses;
+            int availableBonusCount = 0;
+            for (int chara = 0; chara < 32; ++chara) {
+                if (charBonus[chara] > 0.0)
+                    availableBonuses[availableBonusCount++] = charBonus[chara];
+            }
+            // 加成为 0 的角色同样可选，取不满 remaining 个时余下按 0 计
+            const int usedBonusCount = std::min(remaining, availableBonusCount);
+            std::partial_sort(
+                availableBonuses.begin(), availableBonuses.begin() + usedBonusCount,
+                availableBonuses.begin() + availableBonusCount, std::greater<>()
+            );
+            bonusBound += std::accumulate(
+                availableBonuses.begin(), availableBonuses.begin() + usedBonusCount, 0.0
+            );
+        }
+
         DeckScoreDetail upperBound{};
         upperBound.power.total = maxPower;
-        upperBound.eventBonus = 0.0;
+        upperBound.eventBonus = bonusBound;
+        upperBound.supportDeckBonus = dfsInfo.scoreBound.supportDeckBonus;
         // 真实卡组恒以 cardCount=5 评分，member<5 时 order 末尾回落到队长位，
         // 即空位复用队长技能；上界必须用同一形状，否则会走进短卡组分支读越界。
         upperBound.cardCount = 5;
@@ -334,7 +367,7 @@ void BaseDeckRecommend::findBestCardsDFS(
 
         findBestCardsDFS(
             liveType, cfg, *nextCards, supportCards, scoreFunc, dfsInfo,
-            limit, isChallengeLive, member, honorBonus, eventType, eventId, useScoreUpperBoundPrune, fixedCards,
+            limit, isChallengeLive, member, honorBonus, eventType, eventId, fixedCards,
             applySameUnitOrAttrPrune
         );
 
