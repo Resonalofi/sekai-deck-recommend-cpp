@@ -1,8 +1,16 @@
 #include "deck-recommend/base-deck-recommend.h"
-#include <any>
 #include <algorithm>
 #include <bit>
-#include <memory_resource>
+
+
+static size_t hashBucket(uint64_t key, size_t mask) {
+    key ^= key >> 30;
+    key *= 0xbf58476d1ce4e5b9ULL;
+    key ^= key >> 27;
+    key *= 0x94d049bb133111ebULL;
+    key ^= key >> 31;
+    return key & mask;
+}
 
 
 struct Individual {
@@ -53,7 +61,7 @@ struct FitnessCache {
     }
 
     const double* find(uint64_t key) const {
-        size_t index = bucket(key, keys.size() - 1);
+        size_t index = hashBucket(key, keys.size() - 1);
         while (isOccupied(index)) {
             if (keys[index] == key)
                 return &values[index];
@@ -69,15 +77,6 @@ struct FitnessCache {
     }
 
 private:
-    static size_t bucket(uint64_t key, size_t mask) {
-        key ^= key >> 30;
-        key *= 0xbf58476d1ce4e5b9ULL;
-        key ^= key >> 27;
-        key *= 0x94d049bb133111ebULL;
-        key ^= key >> 31;
-        return key & mask;
-    }
-
     bool isOccupied(size_t index) const {
         return occupied[index >> 6] & (uint64_t{1} << (index & 63));
     }
@@ -93,7 +92,7 @@ private:
     }
 
     void insertWithoutGrowth(uint64_t key, double value) {
-        size_t index = bucket(key, keys.size() - 1);
+        size_t index = hashBucket(key, keys.size() - 1);
         while (isOccupied(index)) {
             if (keys[index] == key) {
                 values[index] = value;
@@ -123,6 +122,34 @@ private:
     std::vector<double> values;
     std::vector<uint64_t> occupied;
     size_t count = 0;
+};
+
+
+// 每代按 deckHash 去重的开放寻址集合；容量固定为 2*popSize 上取 2 幂，装载率不超一半
+struct DeckHashSet {
+    explicit DeckHashSet(size_t expectedSize)
+        : keys(std::bit_ceil(std::max<size_t>(16, expectedSize * 2))),
+          occupied((keys.size() + 63) / 64) {}
+
+    void clear() {
+        std::fill(occupied.begin(), occupied.end(), 0);
+    }
+
+    bool insert(uint64_t key) {
+        size_t index = hashBucket(key, keys.size() - 1);
+        while (occupied[index >> 6] & (uint64_t{1} << (index & 63))) {
+            if (keys[index] == key)
+                return false;
+            index = (index + 1) & (keys.size() - 1);
+        }
+        keys[index] = key;
+        occupied[index >> 6] |= uint64_t{1} << (index & 63);
+        return true;
+    }
+
+private:
+    std::vector<uint64_t> keys;
+    std::vector<uint64_t> occupied;
 };
 
 
@@ -446,9 +473,7 @@ void BaseDeckRecommend::findBestCardsGA(
     // 迭代
     std::vector<Individual> newPopulation{};
     newPopulation.reserve(cfg.gaPopSize);
-    std::pmr::unsynchronized_pool_resource deckHashPool;
-    std::pmr::unordered_set<uint64_t> deckHashSet{&deckHashPool};
-    deckHashSet.reserve(cfg.gaPopSize);
+    DeckHashSet deckHashSet(cfg.gaPopSize);
     while (true) {
         std::sort(population.begin(), population.end(), std::greater<Individual>());
         last_max_fitness = cur_max_fitness;
@@ -479,7 +504,7 @@ void BaseDeckRecommend::findBestCardsGA(
         population.clear();
         deckHashSet.clear();
         for (const auto& individual : newPopulation) {
-            if (deckHashSet.insert(individual.deckHash).second) {
+            if (deckHashSet.insert(individual.deckHash)) {
                 population.push_back(individual);
             }
         }
