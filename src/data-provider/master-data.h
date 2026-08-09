@@ -1,12 +1,17 @@
 #ifndef MASTER_DATA_PROVIDER_H
 #define MASTER_DATA_PROVIDER_H
 
+#include <map>
 #include <memory>
+#include <string_view>
 
 #include "data-provider/master-data-types.h"
 
 
 constexpr int finalChapterEventId = 180;
+
+// 主数据 JSON 原文按 key 索引；只持有调用方内存的视图，解析期间不再复制一份
+using MasterDataStrings = std::map<std::string, std::string_view>;
 
 extern const std::vector<std::string> requiredMasterDataKeys;
 extern const std::vector<std::string> notRequiredMasterDataKeys;
@@ -101,9 +106,9 @@ public:
 
     void loadFromFiles(const std::string& baseDir);
 
-    void loadFromStrings(std::map<std::string, std::string>& data);
+    void loadFromStrings(MasterDataStrings& data);
 
-    void loadHonorsFromStrings(std::map<std::string, std::string>& data);
+    void loadHonorsFromStrings(MasterDataStrings& data);
 
     int getNoEventFakeEventId(int eventType) const;
 

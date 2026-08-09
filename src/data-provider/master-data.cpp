@@ -127,13 +127,13 @@ const std::unordered_set<std::string> CardJsonSax::keptKeys = {
     "cardParameterType", "power", "param1", "param2", "param3",
 };
 
-std::vector<Card> loadCardsFromString(const std::string& input) {
+std::vector<Card> loadCardsFromString(std::string_view input) {
     CardJsonSax sax;
-    if (!json::sax_parse(input, &sax))
-        return Card::fromJsonList(json::parse(input));
+    if (!json::sax_parse(input.begin(), input.end(), &sax))
+        return Card::fromJsonList(json::parse(input.begin(), input.end()));
 
     if (!sax.hasRootArray())
-        return Card::fromJsonList(json::parse(input));
+        return Card::fromJsonList(json::parse(input.begin(), input.end()));
     sax.rethrowConversionError();
     return sax.takeCards();
 }
@@ -306,7 +306,7 @@ std::vector<T> loadMasterData(std::map<std::string, json>& jsons, const std::str
 
 template <typename T>
 std::vector<T> loadMasterDataFromString(
-    std::map<std::string, std::string>& data,
+    MasterDataStrings& data,
     const std::string& key,
     bool required = true
 ) {
@@ -320,7 +320,7 @@ std::vector<T> loadMasterDataFromString(
 
     json parsed;
     try {
-        parsed = json::parse(it->second);
+        parsed = json::parse(it->second.begin(), it->second.end());
     }
     catch (const std::exception& e) {
         throw std::runtime_error("Failed to load master data from string: " + key + ", error: " + e.what());
@@ -330,7 +330,7 @@ std::vector<T> loadMasterDataFromString(
     return result;
 }
 
-void MasterData::loadHonorsFromStrings(std::map<std::string, std::string>& data) {
+void MasterData::loadHonorsFromStrings(MasterDataStrings& data) {
     this->baseDir.clear();
     this->honors = loadMasterDataFromString<Honor>(data, "honors");
 }
@@ -396,7 +396,7 @@ void MasterData::loadFromFiles(const std::string& baseDir) {
     loadFromJsons(jsons);
 }
 
-void MasterData::loadFromStrings(std::map<std::string, std::string>& data) {
+void MasterData::loadFromStrings(MasterDataStrings& data) {
     this->baseDir.clear();
     this->areaItemLevels = loadMasterDataFromString<AreaItemLevel>(data, "areaItemLevels");
     this->areaItems = loadMasterDataFromString<AreaItem>(data, "areaItems");

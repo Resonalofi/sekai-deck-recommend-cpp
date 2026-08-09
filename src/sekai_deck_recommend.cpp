@@ -1159,12 +1159,12 @@ public:
         region_masterdata[REGION_ENUM_MAP.at(region)]->loadFromFiles(base_dir);
     }
 
-    void update_masterdata_from_string_map(
-        std::map<std::string, std::string> data,
+    void update_masterdata_from_views(
+        MasterDataStrings& data,
         const std::string& region,
         const std::optional<std::string>& shared_region = std::nullopt
     ) {
-        if (!REGION_ENUM_MAP.count(region)) 
+        if (!REGION_ENUM_MAP.count(region))
             throw std::invalid_argument("Invalid region: " + region);
         std::shared_ptr<MasterData> masterdata;
         if (shared_region.has_value()) {
@@ -1183,6 +1183,17 @@ public:
         region_masterdata[REGION_ENUM_MAP.at(region)] = std::move(masterdata);
     }
 
+    void update_masterdata_from_string_map(
+        std::map<std::string, std::string> data,
+        const std::string& region,
+        const std::optional<std::string>& shared_region = std::nullopt
+    ) {
+        MasterDataStrings views;
+        for (const auto& [key, value] : data)
+            views.emplace(key, std::string_view(value));
+        update_masterdata_from_views(views, region, shared_region);
+    }
+
 #ifndef __EMSCRIPTEN__
     // 从指定string的dict更新区服masterdata数据
     void update_masterdata_from_strings(
@@ -1190,12 +1201,34 @@ public:
         const std::string& region,
         const std::optional<std::string>& shared_region = std::nullopt
     ) {
-        std::map<std::string, std::string> data;
+        // 主数据 JSON 合计数十 MiB，直接引用调用方缓冲区，避免解析期多出一份完整副本。
+        // pybind11 保证实参在调用期间存活，视图不会悬垂。
+        MasterDataStrings data;
+        std::vector<std::string> owned;
+        // 预留够用容量，保证下面的 string_view 不会因 owned 扩容而失效
+        owned.reserve(dict.size());
         for (const auto& item : dict) {
             std::string key = item.first.cast<std::string>();
-            data[key] = item.second.cast<std::string>();
+            if (py::isinstance<py::bytes>(item.second)) {
+                char* buffer = nullptr;
+                Py_ssize_t length = 0;
+                if (PyBytes_AsStringAndSize(item.second.ptr(), &buffer, &length) != 0)
+                    throw py::error_already_set();
+                data[std::move(key)] = std::string_view(buffer, size_t(length));
+            }
+            else if (py::isinstance<py::str>(item.second)) {
+                Py_ssize_t length = 0;
+                const char* buffer = PyUnicode_AsUTF8AndSize(item.second.ptr(), &length);
+                if (buffer == nullptr)
+                    throw py::error_already_set();
+                data[std::move(key)] = std::string_view(buffer, size_t(length));
+            }
+            else {
+                owned.push_back(item.second.cast<std::string>());
+                data[std::move(key)] = std::string_view(owned.back());
+            }
         }
-        update_masterdata_from_string_map(std::move(data), region, shared_region);
+        update_masterdata_from_views(data, region, shared_region);
     }
 #endif
 
