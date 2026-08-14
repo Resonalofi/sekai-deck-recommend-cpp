@@ -67,6 +67,28 @@ the following GitHub Actions repository secrets:
 The workflow removes remote files under `R2_WASM_PREFIX` that are not present in the
 new build. Do not point this secret at the bucket root or a shared prefix.
 
+## Build as a native C++ library
+
+The native target is independent from pybind11 and does not change the default wheel build:
+
+```bash
+cmake -S . -B build/native -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DSEKAI_DECK_RECOMMEND_BUILD_PYTHON=OFF \
+  -DSEKAI_DECK_RECOMMEND_BUILD_NATIVE=ON
+cmake --build build/native --parallel
+```
+
+When this project is included with `add_subdirectory`, link
+`SekaiDeckRecommend::Core` and include `sekai_deck_recommend/native.h`.
+`NativeEngine` accepts nlohmann JSON options, including `user_data` as an object.
+Copies share parsed master data and music metadata; `recommend` is a const read operation,
+so immutable engine snapshots can serve concurrent callers.
+
+The native target only exposes recommendation-domain behavior. HTTP, authentication,
+remote fetching, cache generations, and deployment remain responsibilities of the consuming
+service.
+
 ## Usage
 
 ```python

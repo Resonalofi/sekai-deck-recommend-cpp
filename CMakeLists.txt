@@ -5,6 +5,9 @@ project(sekai-deck-recommend-cpp VERSION 0.3.5 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(SEKAI_DECK_RECOMMEND_BUILD_PYTHON "Build the pybind11 extension" ON)
+option(SEKAI_DECK_RECOMMEND_BUILD_NATIVE "Build the native C++ library" OFF)
+
 include_directories(${PROJECT_SOURCE_DIR}/src)
 include_directories(${PROJECT_SOURCE_DIR}/3rdparty/json/single_include)
 
@@ -54,30 +57,56 @@ if (EMSCRIPTEN)
         )
     endif()
 else()
-    add_subdirectory(3rdparty/pybind11)
+    if (SEKAI_DECK_RECOMMEND_BUILD_NATIVE)
+        add_library(sekai_deck_recommend_core STATIC ${SRC_FILES})
+        add_library(SekaiDeckRecommend::Core ALIAS sekai_deck_recommend_core)
+        set_target_properties(sekai_deck_recommend_core PROPERTIES
+            POSITION_INDEPENDENT_CODE ON
+            EXPORT_NAME Core
+        )
+        target_include_directories(sekai_deck_recommend_core
+            PUBLIC
+                $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+                $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/3rdparty/json/single_include>
+                $<INSTALL_INTERFACE:include>
+            PRIVATE
+                ${PROJECT_SOURCE_DIR}/src
+        )
 
-    pybind11_add_module(sekai_deck_recommend ${SRC_FILES})
-
-    if (MSVC)
-        target_compile_options(sekai_deck_recommend PRIVATE
-            /W4
-            /MP
-            /utf-8
-            /Z7
-        )
-        target_link_options(sekai_deck_recommend PRIVATE
-            /DEBUG:NONE
-        )
-    else()
-        target_compile_options(sekai_deck_recommend PRIVATE
-            -Wall -Wextra -Wuninitialized
-        )
+        if (MSVC)
+            target_compile_options(sekai_deck_recommend_core PRIVATE /W4 /MP /utf-8)
+        else()
+            target_compile_options(sekai_deck_recommend_core PRIVATE -Wall -Wextra -Wuninitialized)
+        endif()
     endif()
 
-    set(INSTALL_DIR "sekai_deck_recommend_cpp")
+    if (SEKAI_DECK_RECOMMEND_BUILD_PYTHON)
+        add_subdirectory(3rdparty/pybind11)
 
-    install(TARGETS sekai_deck_recommend DESTINATION ${INSTALL_DIR})
-    install(DIRECTORY "${PROJECT_SOURCE_DIR}/data" DESTINATION ${INSTALL_DIR})
-    install(FILES "${PROJECT_SOURCE_DIR}/src/sekai_deck_recommend.pyi" DESTINATION ${INSTALL_DIR})
-    install(FILES "${PROJECT_SOURCE_DIR}/src/__init__.py" DESTINATION ${INSTALL_DIR})
+        pybind11_add_module(sekai_deck_recommend ${SRC_FILES})
+        target_compile_definitions(sekai_deck_recommend PRIVATE SEKAI_DECK_RECOMMEND_PYTHON=1)
+
+        if (MSVC)
+            target_compile_options(sekai_deck_recommend PRIVATE
+                /W4
+                /MP
+                /utf-8
+                /Z7
+            )
+            target_link_options(sekai_deck_recommend PRIVATE
+                /DEBUG:NONE
+            )
+        else()
+            target_compile_options(sekai_deck_recommend PRIVATE
+                -Wall -Wextra -Wuninitialized
+            )
+        endif()
+
+        set(INSTALL_DIR "sekai_deck_recommend_cpp")
+
+        install(TARGETS sekai_deck_recommend DESTINATION ${INSTALL_DIR})
+        install(DIRECTORY "${PROJECT_SOURCE_DIR}/data" DESTINATION ${INSTALL_DIR})
+        install(FILES "${PROJECT_SOURCE_DIR}/src/sekai_deck_recommend.pyi" DESTINATION ${INSTALL_DIR})
+        install(FILES "${PROJECT_SOURCE_DIR}/src/__init__.py" DESTINATION ${INSTALL_DIR})
+    endif()
 endif()

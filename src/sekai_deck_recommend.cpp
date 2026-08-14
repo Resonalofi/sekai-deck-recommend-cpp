@@ -10,10 +10,12 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/bind.h>
-#else
+#elif defined(SEKAI_DECK_RECOMMEND_PYTHON)
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 namespace py = pybind11;
+#else
+#include "sekai_deck_recommend/native.h"
 #endif
 
 
@@ -143,7 +145,7 @@ struct PyCardConfig {
     std::optional<bool> skill_max;
     std::optional<bool> canvas;
 
-#ifndef __EMSCRIPTEN__
+#ifdef SEKAI_DECK_RECOMMEND_PYTHON
     py::dict to_dict() const {
         py::dict result;
         if (disable.has_value())        result["disable"] = disable.value();
@@ -177,7 +179,7 @@ struct PySingleCardConfig {
     std::optional<bool> skill_max;
     std::optional<bool> canvas;
 
-#ifndef __EMSCRIPTEN__
+#ifdef SEKAI_DECK_RECOMMEND_PYTHON
     py::dict to_dict() const {
         py::dict result;
         result["card_id"] = card_id;
@@ -214,7 +216,7 @@ struct PySaOptions {
     std::optional<double> cooling_rate;
     std::optional<bool> debug;
 
-#ifndef __EMSCRIPTEN__
+#ifdef SEKAI_DECK_RECOMMEND_PYTHON
     py::dict to_dict() const {
         py::dict result;
         if (run_num.has_value())                result["run_num"] = run_num.value();
@@ -255,7 +257,7 @@ struct PyGaOptions {
     std::optional<double> base_mutation_rate;
     std::optional<double> no_improve_iter_to_mutation_rate;
 
-#ifndef __EMSCRIPTEN__
+#ifdef SEKAI_DECK_RECOMMEND_PYTHON
     py::dict to_dict() const {
         py::dict result;
         if (seed.has_value())                        result["seed"] = seed.value();
@@ -334,7 +336,7 @@ struct PyDeckRecommendOptions {
     std::optional<PySaOptions> sa_options;
     std::optional<PyGaOptions> ga_options;
 
-#ifndef __EMSCRIPTEN__
+#ifdef SEKAI_DECK_RECOMMEND_PYTHON
     py::dict to_dict() const {
         if (user_data.has_value()) 
             throw std::runtime_error("Cannot be converted to dict when user_data is set.");
@@ -508,7 +510,7 @@ struct PyRecommendCard {
     std::string default_image;
     bool has_canvas_bonus;
 
-#ifndef __EMSCRIPTEN__
+#ifdef SEKAI_DECK_RECOMMEND_PYTHON
     py::dict to_dict() const {
         py::dict result;
         result["card_id"] = card_id;
@@ -567,7 +569,7 @@ struct PyRecommendDeck {
     // 找出这一队的算法，按请求里给出的算法顺序排列
     std::vector<std::string> algorithms;
 
-#ifndef __EMSCRIPTEN__
+#ifdef SEKAI_DECK_RECOMMEND_PYTHON
     py::dict to_dict() const {
         py::dict result;
         result["score"] = score;
@@ -628,7 +630,7 @@ struct PyDeckRecommendResult {
     // 各算法的搜索耗时（毫秒）；并行运行组合算法时相加会超过 total_ms
     std::map<std::string, double> algorithm_ms;
 
-#ifndef __EMSCRIPTEN__
+#ifdef SEKAI_DECK_RECOMMEND_PYTHON
     py::dict to_dict() const {
         py::dict result;
         py::list deck_list;
@@ -656,8 +658,8 @@ struct PyDeckRecommendResult {
 // 推荐主类
 class SekaiDeckRecommend {
 
-    mutable std::map<Region, std::shared_ptr<MasterData>> region_masterdata;
-    mutable std::map<Region, std::shared_ptr<MusicMetas>> region_musicmetas;
+    std::map<Region, std::shared_ptr<MasterData>> region_masterdata;
+    std::map<Region, std::shared_ptr<MusicMetas>> region_musicmetas;
 
     struct DeckRecommendOptions {
         int liveType = 0;
@@ -692,11 +694,11 @@ class SekaiDeckRecommend {
         // region master data and music metas
         if (!region_masterdata.count(region))
             throw std::invalid_argument("Master data not found for region: " + pyoptions.region.value());
-        auto masterdata = region_masterdata[region];
+        auto masterdata = region_masterdata.at(region);
 
         if (!region_musicmetas.count(region))
             throw std::invalid_argument("Music metas not found for region: " + pyoptions.region.value());
-        auto musicmetas = region_musicmetas[region];
+        auto musicmetas = region_musicmetas.at(region);
 
         // dataProvider
         options.dataProvider = DataProvider{
@@ -1251,7 +1253,7 @@ public:
         update_masterdata_from_views(views, region, shared_region);
     }
 
-#ifndef __EMSCRIPTEN__
+#ifdef SEKAI_DECK_RECOMMEND_PYTHON
     // 从指定string的dict更新区服masterdata数据
     void update_masterdata_from_strings(
         const py::dict& dict,
@@ -1322,7 +1324,7 @@ public:
     }
 
     // 推荐卡组
-    PyDeckRecommendResult recommend(const PyDeckRecommendOptions& pyoptions) {
+    PyDeckRecommendResult recommend(const PyDeckRecommendOptions& pyoptions) const {
         const long long startNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
         auto options = construct_options_from_py(pyoptions);
@@ -1366,7 +1368,7 @@ public:
 };
 
 
-#ifndef __EMSCRIPTEN__
+#ifdef SEKAI_DECK_RECOMMEND_PYTHON
 PYBIND11_MODULE(sekai_deck_recommend, m) {
     m.doc() = "pybind11 sekai_deck_recommend plugin";
 
@@ -1676,6 +1678,15 @@ PyDeckRecommendOptions optionsFromJson(const json& data, const std::string& user
     return options;
 }
 
+PyDeckRecommendOptions optionsFromJson(const json& data) {
+    auto options = optionsFromJson(data, std::string{});
+    options.user_data_str.reset();
+    auto userData = std::make_shared<UserData>();
+    userData->loadFromJson(data.at("user_data"));
+    options.user_data = PyUserData{std::move(userData)};
+    return options;
+}
+
 json resultToJson(const PyDeckRecommendResult& result) {
     json decks = json::array();
     for (const auto& deck : result.decks) {
@@ -1723,6 +1734,7 @@ json resultToJson(const PyDeckRecommendResult& result) {
     };
 }
 
+#ifdef __EMSCRIPTEN__
 class WasmDeckRecommendEngine {
     SekaiDeckRecommend engine;
     std::map<std::string, std::string> pendingMasterdata;
@@ -1792,4 +1804,64 @@ EMSCRIPTEN_BINDINGS(sekai_deck_recommend_wasm) {
         .function("updateMusicmetas", &WasmDeckRecommendEngine::updateMusicmetas)
         .function("recommend", &WasmDeckRecommendEngine::recommend);
 }
+#else
+}
+
+namespace sekai_deck_recommend {
+
+class NativeEngine::Impl {
+public:
+    SekaiDeckRecommend engine;
+};
+
+NativeEngine::NativeEngine() : impl(std::make_unique<Impl>()) {}
+
+NativeEngine::NativeEngine(const NativeEngine& other) : impl(std::make_unique<Impl>(*other.impl)) {}
+
+NativeEngine::NativeEngine(NativeEngine&& other) noexcept = default;
+
+NativeEngine& NativeEngine::operator=(const NativeEngine& other) {
+    if (this != &other)
+        impl = std::make_unique<Impl>(*other.impl);
+    return *this;
+}
+
+NativeEngine& NativeEngine::operator=(NativeEngine&& other) noexcept = default;
+
+NativeEngine::~NativeEngine() = default;
+
+void NativeEngine::updateMasterdata(
+    std::map<std::string, std::string> data,
+    const std::string& region,
+    const std::optional<std::string>& sharedRegion
+) {
+    impl->engine.update_masterdata_from_string_map(std::move(data), region, sharedRegion);
+}
+
+void NativeEngine::updateMusicmetas(
+    const std::string& data,
+    const std::string& region,
+    const std::optional<std::string>& sharedRegion
+) {
+    impl->engine.update_musicmetas_from_string(data, region, sharedRegion);
+}
+
+nlohmann::json NativeEngine::recommend(const nlohmann::json& options) const {
+    return resultToJson(impl->engine.recommend(optionsFromJson(options)));
+}
+
+void initializeDataPath(const std::string& path) {
+    init_data_path(path);
+}
+
+const std::vector<std::string>& requiredMasterdataKeys() {
+    return requiredMasterDataKeys;
+}
+
+const std::vector<std::string>& optionalMasterdataKeys() {
+    return notRequiredMasterDataKeys;
+}
+
+}
+#endif
 #endif
