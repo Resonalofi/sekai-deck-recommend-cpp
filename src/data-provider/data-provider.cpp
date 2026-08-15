@@ -17,17 +17,17 @@ void DataProvider::init()
     userData->userCharacterFinalChapterHonorEventBonusMap.clear();
     for (const auto& userHonor : userData->userHonors) {
         try {
-            auto& honor = findOrThrow(masterData->honors,  [&](const Honor& it) { 
-                return it.id == userHonor.honorId; 
-            });
-            if (honor.honorRarity == Enums::HonorRarity::high
-            || honor.honorRarity == Enums::HonorRarity::highest) {
-                auto start_idx = honor.assetbundleName.find("wl_2nd");
+            auto* honor = masterData->findHonorById(userHonor.honorId);
+            if (honor == nullptr)
+                throw ElementNoFoundError("Element not found");
+            if (honor->honorRarity == Enums::HonorRarity::high
+            || honor->honorRarity == Enums::HonorRarity::highest) {
+                auto start_idx = honor->assetbundleName.find("wl_2nd");
                 if (start_idx != std::string::npos) {
                     start_idx += 7;
-                    auto end_idx = honor.assetbundleName.find("_cp", start_idx);
-                    auto unit_name = honor.assetbundleName.substr(start_idx, end_idx - start_idx);
-                    int chapter = std::stoi(honor.assetbundleName.substr(end_idx + 3, 1));
+                    auto end_idx = honor->assetbundleName.find("_cp", start_idx);
+                    auto unit_name = honor->assetbundleName.substr(start_idx, end_idx - start_idx);
+                    int chapter = std::stoi(honor->assetbundleName.substr(end_idx + 3, 1));
                     auto& characters = unitCharacters[unit_name];
                     for (auto& item : masterData->worldBlooms) {
                         if (characters.count(item.gameCharacterId) && item.chapterNo == chapter && item.eventId > 140) {

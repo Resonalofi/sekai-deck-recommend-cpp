@@ -92,14 +92,13 @@ SupportDeckBonus DeckCalculator::getSupportDeckBonus(
 
 int DeckCalculator::getHonorBonusPower()
 {
-    auto& honors = this->dataProvider.masterData->honors;
     auto& userHonors = this->dataProvider.userData->userHonors;
     int bonus = 0;
     for (const auto &userHonor : userHonors) {
-        auto it = findOrThrow(honors, [&](const auto &it) { 
-            return it.id == userHonor.honorId; 
-        }, [&]() { return "Honor not found for honorId=" + std::to_string(userHonor.honorId); });
-        auto levelIt = findOrThrow(it.levels, [&](const auto &it) { 
+        auto* honor = this->dataProvider.masterData->findHonorById(userHonor.honorId);
+        if (honor == nullptr)
+            throw ElementNoFoundError("Honor not found for honorId=" + std::to_string(userHonor.honorId));
+        auto& levelIt = findOrThrow(honor->levels, [&](const auto &it) {
             return it.level == userHonor.level; 
         }, [&]() { return "Honor level not found for honorId=" + std::to_string(userHonor.honorId) + " level=" + std::to_string(userHonor.level); });
         bonus += levelIt.bonus;

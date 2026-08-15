@@ -1,6 +1,7 @@
 #include "data-provider/master-data.h"
 #include "data-provider/static-data.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <exception>
@@ -182,6 +183,29 @@ std::shared_ptr<MasterDataCore> MasterData::sharedCore() const {
     return storage;
 }
 
+void MasterData::rebuildHonorIndex() {
+    honorIndex.resize(honors.size());
+    for (int i = 0; i < static_cast<int>(honors.size()); ++i)
+        honorIndex[i] = i;
+    std::sort(honorIndex.begin(), honorIndex.end(), [&](int lhs, int rhs) {
+        if (honors[lhs].id != honors[rhs].id)
+            return honors[lhs].id < honors[rhs].id;
+        return lhs < rhs;
+    });
+}
+
+Honor* MasterData::findHonorById(int honorId) {
+    const auto it = std::lower_bound(
+        honorIndex.begin(),
+        honorIndex.end(),
+        honorId,
+        [&](int index, int id) { return honors[index].id < id; }
+    );
+    if (it == honorIndex.end() || honors[*it].id != honorId)
+        return nullptr;
+    return &honors[*it];
+}
+
 
 const std::vector<std::string> requiredMasterDataKeys = {
     "areaItemLevels",
@@ -333,6 +357,7 @@ std::vector<T> loadMasterDataFromString(
 void MasterData::loadHonorsFromStrings(MasterDataStrings& data) {
     this->baseDir.clear();
     this->honors = loadMasterDataFromString<Honor>(data, "honors");
+    rebuildHonorIndex();
 }
 
 void MasterData::loadFromJsons(std::map<std::string, json>& jsons) {
@@ -352,6 +377,7 @@ void MasterData::loadFromJsons(std::map<std::string, json>& jsons) {
     this->gameCharacters = loadMasterData<GameCharacter>(jsons, "gameCharacters");
     this->gameCharacterUnits = loadMasterData<GameCharacterUnit>(jsons, "gameCharacterUnits");
     this->honors = loadMasterData<Honor>(jsons, "honors");
+    rebuildHonorIndex();
     this->masterLessons = loadMasterData<MasterLesson>(jsons, "masterLessons");
     this->musicDifficulties = loadMasterData<MusicDifficulty>(jsons, "musicDifficulties");
     this->musics = loadMasterData<Music>(jsons, "musics");
@@ -423,6 +449,7 @@ void MasterData::loadFromStrings(MasterDataStrings& data) {
     this->gameCharacters = loadMasterDataFromString<GameCharacter>(data, "gameCharacters");
     this->gameCharacterUnits = loadMasterDataFromString<GameCharacterUnit>(data, "gameCharacterUnits");
     this->honors = loadMasterDataFromString<Honor>(data, "honors");
+    rebuildHonorIndex();
     this->masterLessons = loadMasterDataFromString<MasterLesson>(data, "masterLessons");
     this->musicDifficulties = loadMasterDataFromString<MusicDifficulty>(data, "musicDifficulties");
     this->musics = loadMasterDataFromString<Music>(data, "musics");

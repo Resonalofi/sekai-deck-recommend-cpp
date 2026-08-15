@@ -57,8 +57,12 @@ private:
 
     std::shared_ptr<MasterDataCore> storage;
 
+    // 按称号 ID 排序的原始下标索引；同 ID 保留原数组中的第一项
+    std::vector<int> honorIndex;
+
     void addFakeEvent(int eventType);
     void finishLoad();
+    void rebuildHonorIndex();
 
 public:
     MasterData();
@@ -109,6 +113,8 @@ public:
     void loadFromStrings(MasterDataStrings& data);
 
     void loadHonorsFromStrings(MasterDataStrings& data);
+
+    Honor* findHonorById(int honorId);
 
     int getNoEventFakeEventId(int eventType) const;
 
