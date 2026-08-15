@@ -99,7 +99,7 @@ public:
      * @param unitMember 该组合对应的人数（真实值）
      * @param attrMember 卡牌属性对应的人数（真实值）
      */
-    inline T get(int unit, int unitMember, int attrMember) const {
+    inline const T& get(int unit, int unitMember, int attrMember) const {
         attrMember = (attrMember == 5 ? 5 : 1);
         auto index = indexes[getKey(unit, unitMember, attrMember)];
         if (index == 0)

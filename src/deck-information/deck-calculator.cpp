@@ -125,7 +125,7 @@ DeckPowerCalculation DeckCalculator::getDeckPowerByCards(
         DeckCardPowerDetail power{};
         for (auto units = card.unitMask; units; units &= units - 1) {
             const auto unit = std::countr_zero(units);
-            auto current = card.power.get(unit, result.unitCounts[unit], attrMap[card.attr]);
+            const auto& current = card.power.get(unit, result.unitCounts[unit], attrMap[card.attr]);
             if (current.total > power.total)
                 power = current;
         }
@@ -264,7 +264,7 @@ void DeckCalculator::forEachDeckState(
         // 组分技能效果（对vs有多个组合取最大）或 固定技能效果
         for (auto units = cardDetail.unitMask; units; units &= units - 1) {
             const auto unit = std::countr_zero(units);
-            auto current = cardDetail.skill.get(unit, powerCalculation.unitCounts[unit], 1);
+            const auto& current = cardDetail.skill.get(unit, powerCalculation.unitCounts[unit], 1);
             if (current.scoreUp > s2.scoreUp) s2 = current;
         }
 
@@ -272,16 +272,17 @@ void DeckCalculator::forEachDeckState(
         bool needEnumerate = false;
 
         // 吸分技能效果(max)
-        auto current = cardDetail.skill.get(Enums::Unit::ref, 1, 1);
-        current.scoreUp += current.scoreUpReferenceMax;
-        if (current.skillId != s2.skillId && current.scoreUp > s1.scoreUp) {
-            s1 = current;
+        const auto& referenceSkill = cardDetail.skill.get(Enums::Unit::ref, 1, 1);
+        const double referenceScoreUp = referenceSkill.scoreUp + referenceSkill.scoreUpReferenceMax;
+        if (referenceSkill.skillId != s2.skillId && referenceScoreUp > s1.scoreUp) {
+            s1 = referenceSkill;
+            s1.scoreUp = referenceScoreUp;
             needEnumerate = true;   // 吸分技能需要枚举
         }
         // 异组技能效果
-        current = cardDetail.skill.get(Enums::Unit::diff, unit_num - 1, 1);
-        if (current.skillId != s2.skillId && current.scoreUp > s1.scoreUp) {
-            s1 = current;
+        const auto& differentUnitSkill = cardDetail.skill.get(Enums::Unit::diff, unit_num - 1, 1);
+        if (differentUnitSkill.skillId != s2.skillId && differentUnitSkill.scoreUp > s1.scoreUp) {
+            s1 = differentUnitSkill;
             needEnumerate = false;  // 异组技能不需要枚举
         }
 
