@@ -375,23 +375,26 @@ void BaseDeckRecommend::findBestCardsGA(
             if (std::uniform_real_distribution<double>(0.0, 1.0)(rng) > 0.5) 
                 positions[positionCount++] = i;
         }
+        uint32_t retainedCharacters = 0;
+        if (!isChallengeLive) {
+            for (int i = 0; i < positionCount; ++i)
+                retainedCharacters |= uint32_t{1} << a.deck[positions[i]]->characterId;
+        }
         // 从b中获取可以选择的所有位置（不包括固定）
         std::array<int, 5> bPositions{};
         int bPositionCount = 0;
         for (int i = 0; i < b.cardNum - fixedSize; ++i) {
             auto c1 = b.deck[i];
             bool ok = true;
-            for (int j = 0; j < positionCount; ++j) {
-                auto c2 = a.deck[positions[j]];
-                // 检查id是否重复
-                if (c1->cardId == c2->cardId) {
-                    ok = false;
-                    break;
-                }
-                // 活动live还要检查是否有重复角色
-                if (!isChallengeLive && c1->characterId == c2->characterId) {
-                    ok = false;
-                    break;
+            if (!isChallengeLive) {
+                ok = (retainedCharacters & (uint32_t{1} << c1->characterId)) == 0;
+            } else {
+                for (int j = 0; j < positionCount; ++j) {
+                    // 挑战live允许重复角色，只检查id是否重复
+                    if (c1->cardId == a.deck[positions[j]]->cardId) {
+                        ok = false;
+                        break;
+                    }
                 }
             }
             if (ok) {
