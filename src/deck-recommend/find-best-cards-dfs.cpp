@@ -183,7 +183,10 @@ void BaseDeckRecommend::findBestCardsDFS(
                 }
                 if (availableCount < remaining)
                     continue;
-                std::sort(availablePowers.begin(), availablePowers.begin() + availableCount, std::greater<>());
+                std::partial_sort(
+                    availablePowers.begin(), availablePowers.begin() + remaining,
+                    availablePowers.begin() + availableCount, std::greater<>()
+                );
                 maxPower = std::max(maxPower, std::accumulate(
                     availablePowers.begin(), availablePowers.begin() + remaining, power
                 ));
@@ -201,7 +204,10 @@ void BaseDeckRecommend::findBestCardsDFS(
         if (availableSkillCount < remaining) {
             return;
         }
-        std::sort(availableSkillBounds.begin(), availableSkillBounds.begin() + availableSkillCount, std::greater<>());
+        std::partial_sort(
+            availableSkillBounds.begin(), availableSkillBounds.begin() + remaining,
+            availableSkillBounds.begin() + availableSkillCount, std::greater<>()
+        );
 
         std::array<double, 5> skillBounds{};
         int skillBoundCount = 0;
