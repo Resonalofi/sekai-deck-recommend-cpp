@@ -6,7 +6,7 @@ void BaseDeckRecommend::findBestCardsSA(
     const DeckRecommendConfig& cfg,
     Rng& rng,
     const std::vector<CardDetail> &cardDetails,     // 所有参与组队的卡牌
-    std::map<int, std::vector<SupportDeckCard>>& supportCards,        // 全部卡牌（用于计算支援卡组加成）
+    SupportDeckMap& supportCards,        // 全部卡牌（用于计算支援卡组加成）
     const std::function<Score(const DeckScoreDetail &)> &scoreFunc,
     RecommendCalcInfo& saInfo,
     int limit, 

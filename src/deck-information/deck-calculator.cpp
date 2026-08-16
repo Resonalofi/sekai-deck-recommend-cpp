@@ -68,20 +68,28 @@ DeckBonusInfo DeckCalculator::getDeckBonus(
 
 SupportDeckBonus DeckCalculator::getSupportDeckBonus(
     const std::vector<const CardDetail*> &deckCards, 
-    const std::vector<SupportDeckCard>& supportCards, 
+    const SupportDeckCards& supportCards,
     int supportDeckCount
 )
 {
+    std::uint32_t excludedRanks = 0;
+    for (const auto* card : deckCards) {
+        if (card->cardId >= 0 && static_cast<std::size_t>(card->cardId) < supportCards.topRankByCardId.size()) {
+            const auto rank = supportCards.topRankByCardId[card->cardId];
+            if (rank < 32)
+                excludedRanks |= std::uint32_t{1} << rank;
+        }
+    }
+
     double bonus = 0;
     int count = 0;
     
     std::vector<CardDetail> cards{};
-    for (const auto &card : supportCards) {
+    for (std::size_t i = 0; i < supportCards.cards.size(); ++i) {
         // 支援卡组的卡不能和主队伍重复，需要排除掉
-        if (std::find_if(deckCards.begin(), deckCards.end(), [&](const auto &it) { 
-            return it->cardId == card.cardId;
-        }) != deckCards.end()) 
+        if (i < 32 && (excludedRanks & (std::uint32_t{1} << i)))
             continue;
+        const auto& card = supportCards.cards[i];
         bonus += card.bonus;
         count++;
         if (count >= supportDeckCount) return { bonus, cards };
@@ -183,7 +191,7 @@ int DeckCalculator::getDeckTotalPowerByCards(
 
 void DeckCalculator::forEachDeckState(
     const std::vector<const CardDetail*> &cardDetails,
-    std::map<int, std::vector<SupportDeckCard>>& supportCards,
+    SupportDeckMap& supportCards,
     const DeckStateConsumer& consume,
     int honorBonus,
     std::optional<int> eventType,
@@ -200,7 +208,7 @@ void DeckCalculator::forEachDeckState(
     // 支援加成
     SupportDeckBonus supportDeckBonus{};
     if (supportCards.size()) {
-        std::vector<SupportDeckCard>* pSupportCards = nullptr;
+        SupportDeckCards* pSupportCards = nullptr;
         if (eventId.value_or(0) == finalChapterEventId)
             pSupportCards = &supportCards[cardDetails[0]->characterId]; // 终章支援角色为队长角色
         else
@@ -403,7 +411,7 @@ void DeckCalculator::forEachDeckState(
 
 std::vector<DeckDetail> DeckCalculator::getDeckDetailByCards(
     const std::vector<const CardDetail*> &cardDetails,
-    std::map<int, std::vector<SupportDeckCard>>& supportCards,
+    SupportDeckMap& supportCards,
     int honorBonus,
     std::optional<int> eventType,
     std::optional<int> eventId,

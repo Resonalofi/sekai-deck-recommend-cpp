@@ -24,7 +24,7 @@ void BaseDeckRecommend::runRecommendAlgorithm(
     const DeckRecommendConfig& config,
     const EventConfig& eventConfig,
     const std::vector<CardDetail>& pool,
-    std::map<int, std::vector<SupportDeckCard>>& supportCards,
+    SupportDeckMap& supportCards,
     const std::function<Score(const DeckScoreDetail&)>& scoreFunc,
     RecommendCalcInfo& info,
     int honorBonus,
@@ -128,7 +128,7 @@ uint64_t BaseDeckRecommend::calcDeckHash(const std::vector<const CardDetail*>& d
 BestPermutationResult BaseDeckRecommend::getBestPermutation(
     DeckCalculator& deckCalculator,
     const std::vector<const CardDetail*> &deckCards,
-    std::map<int, std::vector<SupportDeckCard>>& supportCards,
+    SupportDeckMap& supportCards,
     const std::function<Score(const DeckScoreDetail &)> &scoreFunc,
     int honorBonus,
     std::optional<int> eventType,
@@ -211,7 +211,7 @@ BestPermutationResult BaseDeckRecommend::getBestPermutation(
 RecommendDeck BaseDeckRecommend::materializeCandidate(
     DeckCalculator& deckCalculator,
     const std::vector<const CardDetail*>& deckCards,
-    std::map<int, std::vector<SupportDeckCard>>& supportCards,
+    SupportDeckMap& supportCards,
     int honorBonus,
     std::optional<int> eventType,
     std::optional<int> eventId,
@@ -268,24 +268,38 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
         eventConfig, areaItemLevels, scoreUpLimit
     );
 
-    // 归类支援卡组
-    std::map<int, std::vector<SupportDeckCard>> supportCards{};
+    // 归类支援卡组；索引只需覆盖前 32 位，实际最多取 25 张并排除 5 张主卡。
+    SupportDeckMap supportCards{};
+    int maxSupportCardId = 0;
+    if (eventConfig.eventId == finalChapterEventId ||
+        eventConfig.eventType == Enums::EventType::world_bloom) {
+        for (const auto& card : userCards)
+            maxSupportCardId = std::max(maxSupportCardId, card.cardId);
+    }
+    const auto buildSupportCards = [&](int specialCharacterId) {
+        SupportDeckCards result;
+        result.cards.reserve(userCards.size());
+        for (const auto& card : userCards) {
+            result.cards.push_back(this->cardCalculator.getSupportDeckCard(
+                card, eventConfig.eventId, specialCharacterId
+            ));
+        }
+        std::sort(result.cards.begin(), result.cards.end(), [](const SupportDeckCard& a, const SupportDeckCard& b) {
+            return a.bonus > b.bonus;
+        });
+        result.topRankByCardId.assign(maxSupportCardId + 1, 32);
+        const auto indexedCount = std::min<std::size_t>(result.cards.size(), 32);
+        for (std::size_t i = 0; i < indexedCount; ++i)
+            result.topRankByCardId[result.cards[i].cardId] = static_cast<uint8_t>(i);
+        return result;
+    };
     if (eventConfig.eventId == finalChapterEventId) {
         // 终章对每个角色都算一个支援卡组排序
-        for (int i = 1; i <= 26; i++) {
-            std::vector<SupportDeckCard> sc{};
-            for (const auto& card : userCards) 
-                sc.push_back(this->cardCalculator.getSupportDeckCard(card, eventConfig.eventId, i));
-            std::sort(sc.begin(), sc.end(), [](const SupportDeckCard& a, const SupportDeckCard& b) { return a.bonus > b.bonus; });
-            supportCards[i] = sc;
-        }
+        for (int i = 1; i <= 26; i++)
+            supportCards[i] = buildSupportCards(i);
     } else if(eventConfig.eventType == Enums::EventType::world_bloom) {
         // 普通wl只算一个支援卡组排序
-        std::vector<SupportDeckCard> sc{};
-        for (const auto& card : userCards) 
-            sc.push_back(this->cardCalculator.getSupportDeckCard(card, eventConfig.eventId, eventConfig.specialCharacterId));
-        std::sort(sc.begin(), sc.end(), [](const SupportDeckCard& a, const SupportDeckCard& b) { return a.bonus > b.bonus; });
-        supportCards[0] = sc;
+        supportCards[0] = buildSupportCards(eventConfig.specialCharacterId);
     }
 
     // 过滤箱活的卡，不上其它组合的
@@ -408,9 +422,9 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
         int supportDeckCount = deckCalculator.getWorldBloomSupportDeckCount(eventConfig.eventId);
         for (const auto& [characterId, sortedSupportCards] : supportCards) {
             double bonus = 0;
-            int count = std::min(supportDeckCount, int(sortedSupportCards.size()));
+            int count = std::min(supportDeckCount, int(sortedSupportCards.cards.size()));
             for (int i = 0; i < count; ++i)
-                bonus += sortedSupportCards[i].bonus;
+                bonus += sortedSupportCards.cards[i].bonus;
             scoreBound.supportDeckBonus = std::max(scoreBound.supportDeckBonus, bonus);
         }
     }
@@ -518,7 +532,7 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
         if (runAlgorithmsInParallel) {
             // 并行：每个算法一份独立的引擎、支援卡组与计算信息，结束后合并结果
             std::vector<BaseDeckRecommend> engines(algorithms.size(), *this);
-            std::vector<std::map<int, std::vector<SupportDeckCard>>> algorithmSupportCards(
+            std::vector<SupportDeckMap> algorithmSupportCards(
                 algorithms.size(), supportCards
             );
             std::vector<RecommendCalcInfo> infos(algorithms.size(), calcInfo);

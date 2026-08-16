@@ -80,7 +80,7 @@ public:
      */
     SupportDeckBonus getSupportDeckBonus(
         const std::vector<const CardDetail*>& deckCards, 
-        const std::vector<SupportDeckCard>& supportCards, 
+        const SupportDeckCards& supportCards,
         int supportDeckCount
     );
 
@@ -102,7 +102,7 @@ public:
 
     void forEachDeckState(
         const std::vector<const CardDetail*>& cardDetails,
-        std::map<int, std::vector<SupportDeckCard>>& supportCards,
+        SupportDeckMap& supportCards,
         const DeckStateConsumer& consume,
         int honorBonus = 0,
         std::optional<int> eventType = std::nullopt,
@@ -126,7 +126,7 @@ public:
      */
     std::vector<DeckDetail> getDeckDetailByCards(
         const std::vector<const CardDetail*>& cardDetails,
-        std::map<int, std::vector<SupportDeckCard>>& supportCards,
+        SupportDeckMap& supportCards,
         int honorBonus = 0,
         std::optional<int> eventType = std::nullopt,
         std::optional<int> eventId = std::nullopt,

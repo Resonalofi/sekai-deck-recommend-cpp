@@ -174,7 +174,7 @@ void BaseDeckRecommend::findWorldBloomTargetBonusCardsDFS(
     if (eventId.value_or(0) == finalChapterEventId)
         throw std::invalid_argument("final chapter event is not supported for bonus target");
 
-    std::map<int, std::vector<SupportDeckCard>> emptySupportCards{};
+    SupportDeckMap emptySupportCards{};
 
     std::vector<int> bonusList = config.bonusList;
     for (auto& x : bonusList) x *= 2;

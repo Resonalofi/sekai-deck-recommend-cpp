@@ -2,6 +2,9 @@
 #define CARD_CALCULATOR_H
 
 #include <array>
+#include <cstdint>
+#include <map>
+#include <vector>
 
 #include "data-provider/data-provider.h"
 #include "card-information/card-service.h"
@@ -48,6 +51,14 @@ struct SupportDeckCard {
     int cardId;
     double bonus;
 };
+
+struct SupportDeckCards {
+    std::vector<SupportDeckCard> cards;
+    // 32 位掩码覆盖支援卡前 32 位，足够排除最多 5 张主卡。
+    std::vector<uint8_t> topRankByCardId;
+};
+
+using SupportDeckMap = std::map<int, SupportDeckCards>;
 
 
 class CardCalculator {

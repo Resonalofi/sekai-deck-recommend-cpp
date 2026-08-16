@@ -8,7 +8,7 @@ void BaseDeckRecommend::findBestCardsDFS(
     int liveType,
     const DeckRecommendConfig& cfg,
     const std::vector<const CardDetail*> &cardDetails,
-    std::map<int, std::vector<SupportDeckCard>>& supportCards,
+    SupportDeckMap& supportCards,
     const std::function<Score(const DeckScoreDetail &)> &scoreFunc,
     RecommendCalcInfo& dfsInfo,
     int limit, 

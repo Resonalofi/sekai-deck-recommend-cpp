@@ -142,7 +142,7 @@ void BaseDeckRecommend::findTargetBonusCardsDFS(
     std::optional<int> eventId
 )
 {
-    std::map<int, std::vector<SupportDeckCard>> emptySupportCards{};
+    SupportDeckMap emptySupportCards{};
 
     std::vector<int> bonusList = config.bonusList;
     for (auto& x : bonusList) x *= 2;
