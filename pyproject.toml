@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "sekai-deck-recommend-cpp-resona"
-version = "0.3.5"
+version = "0.3.6"
 
 [tool.scikit-build]
 build-dir = "build/{wheel_tag}"
