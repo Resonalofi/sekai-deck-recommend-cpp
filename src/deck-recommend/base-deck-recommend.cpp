@@ -141,12 +141,16 @@ BestPermutationResult BaseDeckRecommend::getBestPermutation(
     if (config.fixedCharacters.size()) bestSkillAsLeader = false;
     // 终章活动不允许把技能最强的换到队长
     if (eventId.has_value() && eventId.value() == finalChapterEventId) bestSkillAsLeader = false;
-    double maxValue{};
-    BestPermutationResult ret{};
+    struct BestPermutationContext {
+        const std::function<Score(const DeckScoreDetail &)> &scoreFunc;
+        const DeckRecommendConfig& config;
+        BestPermutationResult result{};
+        double maxValue{};
+    } context{scoreFunc, config};
     deckCalculator.forEachDeckState(
         deckCards,
         supportCards,
-        [&](const DeckStateView& state) {
+        [context = &context](const DeckStateView& state) {
             DeckScoreDetail scoreDetail{
                 .power = state.power.total,
                 .eventBonus = state.eventBonus.totalBonus,
@@ -157,17 +161,19 @@ BestPermutationResult BaseDeckRecommend::getBestPermutation(
             for (int pos = 0; pos < 5; ++pos)
                 scoreDetail.skillScoreUps[pos] = state.skills[state.order[pos]].scoreUp;
 
-            auto score = scoreFunc(scoreDetail);
+            auto score = context->scoreFunc(scoreDetail);
             double value = score.score + score.liveScore * 1e-7;
 
-            ret.maxTargetValue = std::max(ret.maxTargetValue, value);
-            ret.maxMultiLiveScoreUp = std::max(ret.maxMultiLiveScoreUp, state.multiLiveScoreUp);
+            context->result.maxTargetValue = std::max(context->result.maxTargetValue, value);
+            context->result.maxMultiLiveScoreUp = std::max(
+                context->result.maxMultiLiveScoreUp, state.multiLiveScoreUp
+            );
 
-            if (state.multiLiveScoreUp < config.multiScoreUpLowerBound)
+            if (state.multiLiveScoreUp < context->config.multiScoreUpLowerBound)
                 return;
 
-            if (value > maxValue) {
-                maxValue = value;
+            if (value > context->maxValue) {
+                context->maxValue = value;
                 RecommendCandidate candidate{
                     .score = score,
                     .multiLiveScoreUp = state.multiLiveScoreUp,
@@ -175,20 +181,20 @@ BestPermutationResult BaseDeckRecommend::getBestPermutation(
                     .leaderCardId = state.cardDetails[state.order[0]]->cardId,
                     .statusMask = state.statusMask,
                 };
-                if (config.target == RecommendTarget::Mysekai) {
+                if (context->config.target == RecommendTarget::Mysekai) {
                     candidate.targetValue = score.mysekaiInternalPoint;
                     candidate.resultScore = 0;
                 }
                 else {
                     candidate.resultScore = score.score;
-                    if (config.target == RecommendTarget::Power)
+                    if (context->config.target == RecommendTarget::Power)
                         candidate.targetValue = candidate.power + double(score.score) / SCORE_MAX;
-                    else if (config.target == RecommendTarget::Skill)
+                    else if (context->config.target == RecommendTarget::Skill)
                         candidate.targetValue = state.multiLiveScoreUp + double(score.score) / SCORE_MAX;
                     else
                         candidate.targetValue = score.score + double(score.liveScore) / SCORE_MAX;
                 }
-                ret.bestCandidate = candidate;
+                context->result.bestCandidate = candidate;
             }
         },
         honorBonus,
@@ -199,7 +205,7 @@ BestPermutationResult BaseDeckRecommend::getBestPermutation(
         bestSkillAsLeader,
         /*slimPower=*/true
     );
-    return ret;
+    return context.result;
 }
 
 RecommendDeck BaseDeckRecommend::materializeCandidate(
