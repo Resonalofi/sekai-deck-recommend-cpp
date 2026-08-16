@@ -92,162 +92,231 @@ void BaseDeckRecommend::findBestCardsDFS(
     if (dfsInfo.scoreBound.enabled && int(dfsInfo.deckQueue.size()) >= limit) {
         const int remaining = member - static_cast<int>(deckCards.size());
 
-        // 候选完成条件；attrs[0]/units[0] 代表无属性/组合要求
-        std::array<int, 17> attrs{};
-        std::array<int8_t, 16> attrIndex;
-        attrIndex.fill(-1);
-        int attrCount = 1;
-        if (deckCards.empty()) {
-            for (const auto* card : cardDetails) {
-                if (attrIndex[card->attr] < 0) {
-                    attrIndex[card->attr] = static_cast<int8_t>(attrCount);
-                    attrs[attrCount++] = card->attr;
-                }
-            }
-        }
-        else if (dfsInfo.deckAllSameAttr) {
-            attrIndex[dfsInfo.deckAttr] = 1;
-            attrs[attrCount++] = dfsInfo.deckAttr;
-        }
-
-        std::array<int, 13> units{};
-        std::array<int8_t, 16> unitIndex;
-        unitIndex.fill(-1);
-        int unitCount = 1;
-        auto possibleUnits = dfsInfo.deckCommonUnitMask;
-        if (deckCards.empty()) {
-            for (const auto* card : cardDetails)
-                possibleUnits |= card->unitMask;
-        }
-        const uint16_t queriedUnitMask = possibleUnits;
-        for (; possibleUnits; possibleUnits &= possibleUnits - 1) {
-            const auto unit = std::countr_zero(possibleUnits);
-            unitIndex[unit] = static_cast<int8_t>(unitCount);
-            units[unitCount++] = unit;
-        }
-
-        // 单遍扫描：powerTotals 与 power.get(unit, 要求组合?5:1, 要求属性?5:1).total 等价，
-        // 按 (属性要求, 组合要求) 聚合每个角色的最大综合力，同时聚合技能上界。
-        auto& charPower = dfsInfo.prunePowerScratch;
-        charPower.assign(static_cast<size_t>(attrCount) * unitCount * 32, 0);
-        std::array<double, 32> charSkill{};
-        for (const auto* card : cardDetails) {
-            if (deckCharacters.test(card->characterId))
-                continue;
-            const int chara = card->characterId;
-            // skill.max 是截断后的整数比较值，+1 才能覆盖小数技能值。
-            charSkill[chara] = std::max(charSkill[chara], static_cast<double>(card->skill.max) + 1.0);
-
-            const auto& pt = card->powerTotals;
-            const int aIdx = attrIndex[card->attr];
-            int* row = &charPower[0 * 32 + chara];
-            *row = std::max(*row, std::max(pt[0][0], pt[1][0]));
-            if (aIdx > 0) {
-                row = &charPower[(static_cast<size_t>(aIdx) * unitCount) * 32 + chara];
-                *row = std::max(*row, std::max(pt[0][1], pt[1][1]));
-            }
-            for (auto cardUnits = uint16_t(card->unitMask & queriedUnitMask); cardUnits; cardUnits &= cardUnits - 1) {
-                const int uIdx = unitIndex[std::countr_zero(cardUnits)];
-                row = &charPower[static_cast<size_t>(uIdx) * 32 + chara];
-                *row = std::max(*row, std::max(pt[0][2], pt[1][2]));
-                if (aIdx > 0) {
-                    row = &charPower[(static_cast<size_t>(aIdx) * unitCount + uIdx) * 32 + chara];
-                    *row = std::max(*row, std::max(pt[0][3], pt[1][3]));
-                }
-            }
-        }
-
+        // 最后一张卡时，按角色聚合和 partial_sort 都退化为取一个最大值。
+        const bool useSingleCardBound =
+            remaining == 1 && !deckCards.empty() && dfsInfo.scoreBound.hasEventBonus;
         int maxPower = 0;
-        std::array<int, 32> availablePowers;
-        for (int a = 0; a < attrCount; ++a) {
-            for (int u = 0; u < unitCount; ++u) {
-                const int state = (u > 0 ? 2 : 0) + (a > 0 ? 1 : 0);
-                int power = honorBonus;
-                bool deckCompatible = true;
-                for (const auto* card : deckCards) {
-                    if ((a > 0 && card->attr != attrs[a]) ||
-                        (u > 0 && !(card->unitMask & (uint16_t{1} << units[u])))) {
-                        deckCompatible = false;
-                        break;
-                    }
-                    power += std::max(card->powerTotals[0][state], card->powerTotals[1][state]);
-                }
-                if (!deckCompatible)
-                    continue;
-
-                const int* row = &charPower[(static_cast<size_t>(a) * unitCount + u) * 32];
-                int availableCount = 0;
-                for (int chara = 0; chara < 32; ++chara) {
-                    if (row[chara] > 0)
-                        availablePowers[availableCount++] = row[chara];
-                }
-                if (availableCount < remaining)
-                    continue;
-                std::partial_sort(
-                    availablePowers.begin(), availablePowers.begin() + remaining,
-                    availablePowers.begin() + availableCount, std::greater<>()
-                );
-                maxPower = std::max(maxPower, std::accumulate(
-                    availablePowers.begin(), availablePowers.begin() + remaining, power
-                ));
-            }
-        }
-        if (maxPower == 0)
-            return;
-
-        std::array<double, 32> availableSkillBounds;
-        int availableSkillCount = 0;
-        for (int chara = 0; chara < 32; ++chara) {
-            if (charSkill[chara] > 0.0)
-                availableSkillBounds[availableSkillCount++] = charSkill[chara];
-        }
-        if (availableSkillCount < remaining) {
-            return;
-        }
-        std::partial_sort(
-            availableSkillBounds.begin(), availableSkillBounds.begin() + remaining,
-            availableSkillBounds.begin() + availableSkillCount, std::greater<>()
-        );
-
         std::array<double, 5> skillBounds{};
         int skillBoundCount = 0;
-        for (const auto* card : deckCards)
-            skillBounds[skillBoundCount++] = static_cast<double>(card->skill.max) + 1.0;
-        for (int i = 0; i < remaining; ++i)
-            skillBounds[skillBoundCount++] = availableSkillBounds[i];
-        std::sort(skillBounds.begin(), skillBounds.begin() + skillBoundCount, std::greater<>());
-
-        // 活动加成上界：队内卡按实际最大加成累加，空位取剩余角色中加成最大的几个。
-        // 终章的扣减与当期上限、以及缺失加成时整队归零，都只会让实际值更小。
-        // maxEventBonus 与综合力/技能不在同一批缓存行，无活动时整块跳过。
         double bonusBound = 0.0;
-        if (dfsInfo.scoreBound.hasEventBonus) {
-            bonusBound = dfsInfo.scoreBound.diffAttrBonus;
-            for (const auto* card : deckCards)
-                bonusBound += card->maxEventBonus.value_or(0.0);
-            std::array<double, 32> charBonus{};
+
+        if (useSingleCardBound) [[unlikely]] {
+            double availableSkillBound = 0.0;
+            double availableBonusBound = 0.0;
             for (const auto* card : cardDetails) {
                 if (deckCharacters.test(card->characterId))
                     continue;
-                charBonus[card->characterId] = std::max(
-                    charBonus[card->characterId], card->maxEventBonus.value_or(0.0)
+                availableSkillBound = std::max(
+                    availableSkillBound, static_cast<double>(card->skill.max) + 1.0
+                );
+                availableBonusBound = std::max(
+                    availableBonusBound, card->maxEventBonus.value_or(0.0)
                 );
             }
-            std::array<double, 32> availableBonuses;
-            int availableBonusCount = 0;
-            for (int chara = 0; chara < 32; ++chara) {
-                if (charBonus[chara] > 0.0)
-                    availableBonuses[availableBonusCount++] = charBonus[chara];
+            if (availableSkillBound == 0.0)
+                return;
+
+            std::array<int, 2> attrs{};
+            int attrCount = 1;
+            if (dfsInfo.deckAllSameAttr)
+                attrs[attrCount++] = dfsInfo.deckAttr;
+
+            std::array<uint16_t, 13> unitMasks{};
+            int unitCount = 1;
+            for (auto units = dfsInfo.deckCommonUnitMask; units; units &= units - 1)
+                unitMasks[unitCount++] = uint16_t{1} << std::countr_zero(units);
+
+            for (int a = 0; a < attrCount; ++a) {
+                for (int u = 0; u < unitCount; ++u) {
+                    const int state = (u > 0 ? 2 : 0) + (a > 0 ? 1 : 0);
+                    int power = honorBonus;
+                    for (const auto* card : deckCards)
+                        power += std::max(card->powerTotals[0][state], card->powerTotals[1][state]);
+
+                    int candidatePower = 0;
+                    for (const auto* card : cardDetails) {
+                        if (deckCharacters.test(card->characterId) ||
+                            (a > 0 && card->attr != attrs[a]) ||
+                            (u > 0 && !(card->unitMask & unitMasks[u]))) {
+                            continue;
+                        }
+                        candidatePower = std::max(candidatePower, std::max(
+                            card->powerTotals[0][state], card->powerTotals[1][state]
+                        ));
+                    }
+                    if (candidatePower > 0)
+                        maxPower = std::max(maxPower, power + candidatePower);
+                }
             }
-            // 加成为 0 的角色同样可选，取不满 remaining 个时余下按 0 计
-            const int usedBonusCount = std::min(remaining, availableBonusCount);
+            if (maxPower == 0)
+                return;
+
+            for (const auto* card : deckCards)
+                skillBounds[skillBoundCount++] = static_cast<double>(card->skill.max) + 1.0;
+            skillBounds[skillBoundCount++] = availableSkillBound;
+            std::sort(skillBounds.begin(), skillBounds.begin() + skillBoundCount, std::greater<>());
+
+            bonusBound = dfsInfo.scoreBound.diffAttrBonus;
+            for (const auto* card : deckCards)
+                bonusBound += card->maxEventBonus.value_or(0.0);
+            bonusBound += availableBonusBound;
+
+        }
+        else {
+            // 候选完成条件；attrs[0]/units[0] 代表无属性/组合要求
+            std::array<int, 17> attrs{};
+            std::array<int8_t, 16> attrIndex;
+            attrIndex.fill(-1);
+            int attrCount = 1;
+            if (deckCards.empty()) {
+                for (const auto* card : cardDetails) {
+                    if (attrIndex[card->attr] < 0) {
+                        attrIndex[card->attr] = static_cast<int8_t>(attrCount);
+                        attrs[attrCount++] = card->attr;
+                    }
+                }
+            }
+            else if (dfsInfo.deckAllSameAttr) {
+                attrIndex[dfsInfo.deckAttr] = 1;
+                attrs[attrCount++] = dfsInfo.deckAttr;
+            }
+
+            std::array<int, 13> units{};
+            std::array<int8_t, 16> unitIndex;
+            unitIndex.fill(-1);
+            int unitCount = 1;
+            auto possibleUnits = dfsInfo.deckCommonUnitMask;
+            if (deckCards.empty()) {
+                for (const auto* card : cardDetails)
+                    possibleUnits |= card->unitMask;
+            }
+            const uint16_t queriedUnitMask = possibleUnits;
+            for (; possibleUnits; possibleUnits &= possibleUnits - 1) {
+                const auto unit = std::countr_zero(possibleUnits);
+                unitIndex[unit] = static_cast<int8_t>(unitCount);
+                units[unitCount++] = unit;
+            }
+
+            // 单遍扫描：powerTotals 与 power.get(unit, 要求组合?5:1, 要求属性?5:1).total 等价，
+            // 按 (属性要求, 组合要求) 聚合每个角色的最大综合力，同时聚合技能上界。
+            auto& charPower = dfsInfo.prunePowerScratch;
+            charPower.assign(static_cast<size_t>(attrCount) * unitCount * 32, 0);
+            std::array<double, 32> charSkill{};
+            for (const auto* card : cardDetails) {
+                if (deckCharacters.test(card->characterId))
+                    continue;
+                const int chara = card->characterId;
+                // skill.max 是截断后的整数比较值，+1 才能覆盖小数技能值。
+                charSkill[chara] = std::max(charSkill[chara], static_cast<double>(card->skill.max) + 1.0);
+
+                const auto& pt = card->powerTotals;
+                const int aIdx = attrIndex[card->attr];
+                int* row = &charPower[0 * 32 + chara];
+                *row = std::max(*row, std::max(pt[0][0], pt[1][0]));
+                if (aIdx > 0) {
+                    row = &charPower[(static_cast<size_t>(aIdx) * unitCount) * 32 + chara];
+                    *row = std::max(*row, std::max(pt[0][1], pt[1][1]));
+                }
+                for (auto cardUnits = uint16_t(card->unitMask & queriedUnitMask); cardUnits; cardUnits &= cardUnits - 1) {
+                    const int uIdx = unitIndex[std::countr_zero(cardUnits)];
+                    row = &charPower[static_cast<size_t>(uIdx) * 32 + chara];
+                    *row = std::max(*row, std::max(pt[0][2], pt[1][2]));
+                    if (aIdx > 0) {
+                        row = &charPower[(static_cast<size_t>(aIdx) * unitCount + uIdx) * 32 + chara];
+                        *row = std::max(*row, std::max(pt[0][3], pt[1][3]));
+                    }
+                }
+            }
+
+            std::array<int, 32> availablePowers;
+            for (int a = 0; a < attrCount; ++a) {
+                for (int u = 0; u < unitCount; ++u) {
+                    const int state = (u > 0 ? 2 : 0) + (a > 0 ? 1 : 0);
+                    int power = honorBonus;
+                    bool deckCompatible = true;
+                    for (const auto* card : deckCards) {
+                        if ((a > 0 && card->attr != attrs[a]) ||
+                            (u > 0 && !(card->unitMask & (uint16_t{1} << units[u])))) {
+                            deckCompatible = false;
+                            break;
+                        }
+                        power += std::max(card->powerTotals[0][state], card->powerTotals[1][state]);
+                    }
+                    if (!deckCompatible)
+                        continue;
+
+                    const int* row = &charPower[(static_cast<size_t>(a) * unitCount + u) * 32];
+                    int availableCount = 0;
+                    for (int chara = 0; chara < 32; ++chara) {
+                        if (row[chara] > 0)
+                            availablePowers[availableCount++] = row[chara];
+                    }
+                    if (availableCount < remaining)
+                        continue;
+                    std::partial_sort(
+                        availablePowers.begin(), availablePowers.begin() + remaining,
+                        availablePowers.begin() + availableCount, std::greater<>()
+                    );
+                    maxPower = std::max(maxPower, std::accumulate(
+                        availablePowers.begin(), availablePowers.begin() + remaining, power
+                    ));
+                }
+            }
+            if (maxPower == 0)
+                return;
+
+            std::array<double, 32> availableSkillBounds;
+            int availableSkillCount = 0;
+            for (int chara = 0; chara < 32; ++chara) {
+                if (charSkill[chara] > 0.0)
+                    availableSkillBounds[availableSkillCount++] = charSkill[chara];
+            }
+            if (availableSkillCount < remaining) {
+                return;
+            }
             std::partial_sort(
-                availableBonuses.begin(), availableBonuses.begin() + usedBonusCount,
-                availableBonuses.begin() + availableBonusCount, std::greater<>()
+                availableSkillBounds.begin(), availableSkillBounds.begin() + remaining,
+                availableSkillBounds.begin() + availableSkillCount, std::greater<>()
             );
-            bonusBound += std::accumulate(
-                availableBonuses.begin(), availableBonuses.begin() + usedBonusCount, 0.0
-            );
+
+            for (const auto* card : deckCards)
+                skillBounds[skillBoundCount++] = static_cast<double>(card->skill.max) + 1.0;
+            for (int i = 0; i < remaining; ++i)
+                skillBounds[skillBoundCount++] = availableSkillBounds[i];
+            std::sort(skillBounds.begin(), skillBounds.begin() + skillBoundCount, std::greater<>());
+
+            // 活动加成上界：队内卡按实际最大加成累加，空位取剩余角色中加成最大的几个。
+            // 终章的扣减与当期上限、以及缺失加成时整队归零，都只会让实际值更小。
+            // maxEventBonus 与综合力/技能不在同一批缓存行，无活动时整块跳过。
+            if (dfsInfo.scoreBound.hasEventBonus) {
+                bonusBound = dfsInfo.scoreBound.diffAttrBonus;
+                for (const auto* card : deckCards)
+                    bonusBound += card->maxEventBonus.value_or(0.0);
+                std::array<double, 32> charBonus{};
+                for (const auto* card : cardDetails) {
+                    if (deckCharacters.test(card->characterId))
+                        continue;
+                    charBonus[card->characterId] = std::max(
+                        charBonus[card->characterId], card->maxEventBonus.value_or(0.0)
+                    );
+                }
+                std::array<double, 32> availableBonuses;
+                int availableBonusCount = 0;
+                for (int chara = 0; chara < 32; ++chara) {
+                    if (charBonus[chara] > 0.0)
+                        availableBonuses[availableBonusCount++] = charBonus[chara];
+                }
+                // 加成为 0 的角色同样可选，取不满 remaining 个时余下按 0 计
+                const int usedBonusCount = std::min(remaining, availableBonusCount);
+                std::partial_sort(
+                    availableBonuses.begin(), availableBonuses.begin() + usedBonusCount,
+                    availableBonuses.begin() + availableBonusCount, std::greater<>()
+                );
+                bonusBound += std::accumulate(
+                    availableBonuses.begin(), availableBonuses.begin() + usedBonusCount, 0.0
+                );
+            }
+
         }
 
         DeckScoreDetail upperBound{};
