@@ -91,6 +91,30 @@ struct ScoreUpperBoundInfo {
 };
 
 
+// DFS 分数上界的卡池索引；综合力表的存储由 RecommendCalcInfo 的复用缓冲提供，
+// 避免把大数组插入递归热字段之间。
+struct DfsScoreBoundIndex {
+    static constexpr int attrCount = 16;
+    static constexpr int characterCount = 32;
+
+    std::array<double, characterCount> skills{};
+    std::array<double, characterCount> bonuses{};
+    uint16_t attrs = 0;
+    uint16_t units = 0;
+
+    void build(
+        const std::vector<const CardDetail*>& cards,
+        std::vector<int>& powers
+    );
+
+    const int* powerRow(
+        const std::vector<int>& powers,
+        int attr,
+        int unit
+    ) const;
+};
+
+
 // 存储卡组推荐计算的结果以及过程中需要记录的信息
 struct RecommendCalcInfo {
     long long start_ts = 0;
@@ -110,8 +134,8 @@ struct RecommendCalcInfo {
     std::unordered_map<uint64_t, double> deckTargetValueMap{};
     // 分数上界整枝的预计算量，由 recommendHighScoreDeck 一次算好
     ScoreUpperBoundInfo scoreBound{};
-    // 无活动剪枝的 (属性,组合)x角色 综合力聚合缓冲，复用避免逐节点分配
-    std::vector<int> prunePowerScratch{};
+    // 基础卡池的 (属性,组合)x角色 综合力索引存储
+    std::vector<int> scoreBoundPowerScratch{};
     // 首张卡兼容候选列表缓冲，仅深度 cIndex+1 构建，复用避免逐节点分配
     std::vector<const CardDetail*> compatibleScratch{};
 
@@ -123,6 +147,10 @@ struct RecommendCalcInfo {
     // 是否需要在候选被去重时补记来源算法；只运行一个算法时来源必然是它自己，
     // 省掉候选热路径上的第二次哈希查找
     bool trackAlgorithmSources = false;
+    // 上界索引元数据和兼容子池缓冲放在末尾，避免改变上面的递归热字段偏移
+    DfsScoreBoundIndex scoreBoundIndex{};
+    std::vector<int> compatibleScoreBoundPowers{};
+    DfsScoreBoundIndex compatibleScoreBoundIndex{};
 
     // 添加一个新结果
     void update(const RecommendDeck &deck, int limit);

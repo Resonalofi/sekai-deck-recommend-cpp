@@ -78,6 +78,10 @@ void BaseDeckRecommend::runRecommendAlgorithm(
         for (const auto& card : pool)
             dfsCards.push_back(&card);
 
+        if (info.scoreBound.enabled) {
+            info.scoreBoundIndex.build(dfsCards, info.scoreBoundPowerScratch);
+        }
+
         // 插入固定卡牌
         for (const auto& card : fixedCards) {
             if (info.deckCards.empty())

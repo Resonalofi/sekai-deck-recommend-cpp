@@ -195,7 +195,8 @@ public:
         std::optional<int> eventType = std::nullopt,
         std::optional<int> eventId = std::nullopt,
         const std::vector<CardDetail>& fixedCards = {},
-        bool applySameUnitOrAttrPrune = true
+        bool applySameUnitOrAttrPrune = true,
+        bool useCompatibleScoreBoundIndex = false
     );
 
     /**

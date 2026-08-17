@@ -4,6 +4,60 @@
 #include <numeric>
 
 
+void DfsScoreBoundIndex::build(
+    const std::vector<const CardDetail*>& cards,
+    std::vector<int>& powers
+) {
+    powers.assign(attrCount * UNIT_MAX * characterCount, 0);
+    skills.fill(0.0);
+    bonuses.fill(0.0);
+    attrs = 0;
+    units = 0;
+
+    const auto updatePower = [&](int attr, int unit, int character, int value) {
+        auto& current = powers[(attr * UNIT_MAX + unit) * characterCount + character];
+        current = std::max(current, value);
+    };
+
+    for (const auto* card : cards) {
+        const int character = card->characterId;
+        attrs |= uint16_t{1} << card->attr;
+        units |= card->unitMask;
+        skills[character] = std::max(
+            skills[character], static_cast<double>(card->skill.max) + 1.0
+        );
+        bonuses[character] = std::max(
+            bonuses[character], card->maxEventBonus.value_or(0.0)
+        );
+
+        updatePower(0, 0, character, std::max(
+            card->powerTotals[0][0], card->powerTotals[1][0]
+        ));
+        updatePower(card->attr, 0, character, std::max(
+            card->powerTotals[0][1], card->powerTotals[1][1]
+        ));
+        for (auto cardUnits = card->unitMask; cardUnits; cardUnits &= cardUnits - 1) {
+            const int unit = std::countr_zero(cardUnits);
+            updatePower(0, unit, character, std::max(
+                card->powerTotals[0][2], card->powerTotals[1][2]
+            ));
+            updatePower(card->attr, unit, character, std::max(
+                card->powerTotals[0][3], card->powerTotals[1][3]
+            ));
+        }
+    }
+}
+
+
+const int* DfsScoreBoundIndex::powerRow(
+    const std::vector<int>& powers,
+    int attr,
+    int unit
+) const {
+    return &powers[(attr * UNIT_MAX + unit) * characterCount];
+}
+
+
 void BaseDeckRecommend::findBestCardsDFS(
     int liveType,
     const DeckRecommendConfig& cfg,
@@ -18,7 +72,8 @@ void BaseDeckRecommend::findBestCardsDFS(
     std::optional<int> eventType,
     std::optional<int> eventId,
     const std::vector<CardDetail>& fixedCards,
-    bool applySameUnitOrAttrPrune
+    bool applySameUnitOrAttrPrune,
+    bool useCompatibleScoreBoundIndex
 )
 {
     // 超时
@@ -99,18 +154,24 @@ void BaseDeckRecommend::findBestCardsDFS(
         std::array<double, 5> skillBounds{};
         int skillBoundCount = 0;
         double bonusBound = 0.0;
+        const auto& boundIndex = useCompatibleScoreBoundIndex
+            ? dfsInfo.compatibleScoreBoundIndex
+            : dfsInfo.scoreBoundIndex;
+        const auto& boundPowers = useCompatibleScoreBoundIndex
+            ? dfsInfo.compatibleScoreBoundPowers
+            : dfsInfo.scoreBoundPowerScratch;
 
         if (useSingleCardBound) [[unlikely]] {
             double availableSkillBound = 0.0;
             double availableBonusBound = 0.0;
-            for (const auto* card : cardDetails) {
-                if (deckCharacters.test(card->characterId))
+            for (int character = 0; character < DfsScoreBoundIndex::characterCount; ++character) {
+                if (deckCharacters.test(character))
                     continue;
                 availableSkillBound = std::max(
-                    availableSkillBound, static_cast<double>(card->skill.max) + 1.0
+                    availableSkillBound, boundIndex.skills[character]
                 );
                 availableBonusBound = std::max(
-                    availableBonusBound, card->maxEventBonus.value_or(0.0)
+                    availableBonusBound, boundIndex.bonuses[character]
                 );
             }
             if (availableSkillBound == 0.0)
@@ -121,10 +182,10 @@ void BaseDeckRecommend::findBestCardsDFS(
             if (dfsInfo.deckAllSameAttr)
                 attrs[attrCount++] = dfsInfo.deckAttr;
 
-            std::array<uint16_t, 13> unitMasks{};
+            std::array<int, 13> units{};
             int unitCount = 1;
-            for (auto units = dfsInfo.deckCommonUnitMask; units; units &= units - 1)
-                unitMasks[unitCount++] = uint16_t{1} << std::countr_zero(units);
+            for (auto unitMask = dfsInfo.deckCommonUnitMask; unitMask; unitMask &= unitMask - 1)
+                units[unitCount++] = std::countr_zero(unitMask);
 
             for (int a = 0; a < attrCount; ++a) {
                 for (int u = 0; u < unitCount; ++u) {
@@ -133,16 +194,14 @@ void BaseDeckRecommend::findBestCardsDFS(
                     for (const auto* card : deckCards)
                         power += std::max(card->powerTotals[0][state], card->powerTotals[1][state]);
 
+                    const int* row = boundIndex.powerRow(
+                        boundPowers, attrs[a], units[u]
+                    );
                     int candidatePower = 0;
-                    for (const auto* card : cardDetails) {
-                        if (deckCharacters.test(card->characterId) ||
-                            (a > 0 && card->attr != attrs[a]) ||
-                            (u > 0 && !(card->unitMask & unitMasks[u]))) {
+                    for (int character = 0; character < DfsScoreBoundIndex::characterCount; ++character) {
+                        if (deckCharacters.test(character))
                             continue;
-                        }
-                        candidatePower = std::max(candidatePower, std::max(
-                            card->powerTotals[0][state], card->powerTotals[1][state]
-                        ));
+                        candidatePower = std::max(candidatePower, row[character]);
                     }
                     if (candidatePower > 0)
                         maxPower = std::max(maxPower, power + candidatePower);
@@ -165,68 +224,22 @@ void BaseDeckRecommend::findBestCardsDFS(
         else {
             // 候选完成条件；attrs[0]/units[0] 代表无属性/组合要求
             std::array<int, 17> attrs{};
-            std::array<int8_t, 16> attrIndex;
-            attrIndex.fill(-1);
             int attrCount = 1;
             if (deckCards.empty()) {
-                for (const auto* card : cardDetails) {
-                    if (attrIndex[card->attr] < 0) {
-                        attrIndex[card->attr] = static_cast<int8_t>(attrCount);
-                        attrs[attrCount++] = card->attr;
-                    }
-                }
+                for (auto attrMask = boundIndex.attrs; attrMask; attrMask &= attrMask - 1)
+                    attrs[attrCount++] = std::countr_zero(attrMask);
             }
             else if (dfsInfo.deckAllSameAttr) {
-                attrIndex[dfsInfo.deckAttr] = 1;
                 attrs[attrCount++] = dfsInfo.deckAttr;
             }
 
             std::array<int, 13> units{};
-            std::array<int8_t, 16> unitIndex;
-            unitIndex.fill(-1);
             int unitCount = 1;
-            auto possibleUnits = dfsInfo.deckCommonUnitMask;
-            if (deckCards.empty()) {
-                for (const auto* card : cardDetails)
-                    possibleUnits |= card->unitMask;
-            }
-            const uint16_t queriedUnitMask = possibleUnits;
-            for (; possibleUnits; possibleUnits &= possibleUnits - 1) {
-                const auto unit = std::countr_zero(possibleUnits);
-                unitIndex[unit] = static_cast<int8_t>(unitCount);
-                units[unitCount++] = unit;
-            }
-
-            // 单遍扫描：powerTotals 与 power.get(unit, 要求组合?5:1, 要求属性?5:1).total 等价，
-            // 按 (属性要求, 组合要求) 聚合每个角色的最大综合力，同时聚合技能上界。
-            auto& charPower = dfsInfo.prunePowerScratch;
-            charPower.assign(static_cast<size_t>(attrCount) * unitCount * 32, 0);
-            std::array<double, 32> charSkill{};
-            for (const auto* card : cardDetails) {
-                if (deckCharacters.test(card->characterId))
-                    continue;
-                const int chara = card->characterId;
-                // skill.max 是截断后的整数比较值，+1 才能覆盖小数技能值。
-                charSkill[chara] = std::max(charSkill[chara], static_cast<double>(card->skill.max) + 1.0);
-
-                const auto& pt = card->powerTotals;
-                const int aIdx = attrIndex[card->attr];
-                int* row = &charPower[0 * 32 + chara];
-                *row = std::max(*row, std::max(pt[0][0], pt[1][0]));
-                if (aIdx > 0) {
-                    row = &charPower[(static_cast<size_t>(aIdx) * unitCount) * 32 + chara];
-                    *row = std::max(*row, std::max(pt[0][1], pt[1][1]));
-                }
-                for (auto cardUnits = uint16_t(card->unitMask & queriedUnitMask); cardUnits; cardUnits &= cardUnits - 1) {
-                    const int uIdx = unitIndex[std::countr_zero(cardUnits)];
-                    row = &charPower[static_cast<size_t>(uIdx) * 32 + chara];
-                    *row = std::max(*row, std::max(pt[0][2], pt[1][2]));
-                    if (aIdx > 0) {
-                        row = &charPower[(static_cast<size_t>(aIdx) * unitCount + uIdx) * 32 + chara];
-                        *row = std::max(*row, std::max(pt[0][3], pt[1][3]));
-                    }
-                }
-            }
+            auto possibleUnits = deckCards.empty()
+                ? boundIndex.units
+                : dfsInfo.deckCommonUnitMask;
+            for (; possibleUnits; possibleUnits &= possibleUnits - 1)
+                units[unitCount++] = std::countr_zero(possibleUnits);
 
             std::array<int, 32> availablePowers;
             for (int a = 0; a < attrCount; ++a) {
@@ -245,11 +258,13 @@ void BaseDeckRecommend::findBestCardsDFS(
                     if (!deckCompatible)
                         continue;
 
-                    const int* row = &charPower[(static_cast<size_t>(a) * unitCount + u) * 32];
+                    const int* row = boundIndex.powerRow(
+                        boundPowers, attrs[a], units[u]
+                    );
                     int availableCount = 0;
-                    for (int chara = 0; chara < 32; ++chara) {
-                        if (row[chara] > 0)
-                            availablePowers[availableCount++] = row[chara];
+                    for (int character = 0; character < DfsScoreBoundIndex::characterCount; ++character) {
+                        if (!deckCharacters.test(character) && row[character] > 0)
+                            availablePowers[availableCount++] = row[character];
                     }
                     if (availableCount < remaining)
                         continue;
@@ -267,9 +282,9 @@ void BaseDeckRecommend::findBestCardsDFS(
 
             std::array<double, 32> availableSkillBounds;
             int availableSkillCount = 0;
-            for (int chara = 0; chara < 32; ++chara) {
-                if (charSkill[chara] > 0.0)
-                    availableSkillBounds[availableSkillCount++] = charSkill[chara];
+            for (int character = 0; character < DfsScoreBoundIndex::characterCount; ++character) {
+                if (!deckCharacters.test(character) && boundIndex.skills[character] > 0.0)
+                    availableSkillBounds[availableSkillCount++] = boundIndex.skills[character];
             }
             if (availableSkillCount < remaining) {
                 return;
@@ -292,19 +307,11 @@ void BaseDeckRecommend::findBestCardsDFS(
                 bonusBound = dfsInfo.scoreBound.diffAttrBonus;
                 for (const auto* card : deckCards)
                     bonusBound += card->maxEventBonus.value_or(0.0);
-                std::array<double, 32> charBonus{};
-                for (const auto* card : cardDetails) {
-                    if (deckCharacters.test(card->characterId))
-                        continue;
-                    charBonus[card->characterId] = std::max(
-                        charBonus[card->characterId], card->maxEventBonus.value_or(0.0)
-                    );
-                }
                 std::array<double, 32> availableBonuses;
                 int availableBonusCount = 0;
-                for (int chara = 0; chara < 32; ++chara) {
-                    if (charBonus[chara] > 0.0)
-                        availableBonuses[availableBonusCount++] = charBonus[chara];
+                for (int character = 0; character < DfsScoreBoundIndex::characterCount; ++character) {
+                    if (!deckCharacters.test(character) && boundIndex.bonuses[character] > 0.0)
+                        availableBonuses[availableBonusCount++] = boundIndex.bonuses[character];
                 }
                 // 加成为 0 的角色同样可选，取不满 remaining 个时余下按 0 计
                 const int usedBonusCount = std::min(remaining, availableBonusCount);
@@ -427,6 +434,7 @@ void BaseDeckRecommend::findBestCardsDFS(
         deckCharacters.flip(card->characterId);
 
         const auto* nextCards = &cardDetails;
+        bool nextUsesCompatibleScoreBoundIndex = useCompatibleScoreBoundIndex;
         if (applySameUnitOrAttrPrune &&
             deckCards.size() == cIndex + 1 && deckCards.size() < static_cast<std::size_t>(member)) {
             compatibleCards.clear();
@@ -438,12 +446,18 @@ void BaseDeckRecommend::findBestCardsDFS(
                 }
             }
             nextCards = &compatibleCards;
+            if (dfsInfo.scoreBound.enabled) {
+                dfsInfo.compatibleScoreBoundIndex.build(
+                    compatibleCards, dfsInfo.compatibleScoreBoundPowers
+                );
+                nextUsesCompatibleScoreBoundIndex = true;
+            }
         }
 
         findBestCardsDFS(
             liveType, cfg, *nextCards, supportCards, scoreFunc, dfsInfo,
             limit, isChallengeLive, member, honorBonus, eventType, eventId, fixedCards,
-            applySameUnitOrAttrPrune
+            applySameUnitOrAttrPrune, nextUsesCompatibleScoreBoundIndex
         );
 
         deckCards.pop_back();
