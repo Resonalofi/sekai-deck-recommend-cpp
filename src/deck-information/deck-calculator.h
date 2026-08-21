@@ -42,7 +42,18 @@ struct DeckStateView {
     double multiLiveScoreUp;
 };
 
+struct MultiLiveScoreStateView {
+    int power;
+    double eventBonus;
+    double supportDeckBonus;
+    const std::array<double, 5>& skillScoreUps;
+    int leaderCardId;
+    int statusMask;
+    double multiLiveScoreUp;
+};
+
 using DeckStateConsumer = std::function<void(const DeckStateView&)>;
+using MultiLiveScoreStateConsumer = std::function<void(const MultiLiveScoreStateView&)>;
 
 class DeckCalculator {
     DataProvider dataProvider;
@@ -111,6 +122,18 @@ public:
         bool keepAfterTrainingState = false,
         bool bestSkillAsLeader = true,
         bool slimPower = false
+    );
+
+    void forEachMultiLiveScoreState(
+        const std::vector<const CardDetail*>& cardDetails,
+        SupportDeckMap& supportCards,
+        const MultiLiveScoreStateConsumer& consume,
+        int honorBonus = 0,
+        std::optional<int> eventType = std::nullopt,
+        std::optional<int> eventId = std::nullopt,
+        SkillReferenceChooseStrategy skillReferenceChooseStrategy = SkillReferenceChooseStrategy::Average,
+        bool keepAfterTrainingState = false,
+        bool bestSkillAsLeader = true
     );
 
     /**

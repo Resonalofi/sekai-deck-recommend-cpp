@@ -4,6 +4,190 @@
 #include <bit>
 
 
+namespace {
+
+struct PreparedScoreSkill {
+    const DeckCardSkillDetail* detail;
+    double scoreUp;
+};
+
+template<typename Consumer>
+void forEachSkillScoreState(
+    const std::vector<const CardDetail*>& cardDetails,
+    const std::array<int, 16>& unitCounts,
+    SkillReferenceChooseStrategy skillReferenceChooseStrategy,
+    bool keepAfterTrainingState,
+    bool bestSkillAsLeader,
+    Consumer&& consume
+) {
+    const int cardCount = static_cast<int>(cardDetails.size());
+    int unitCount = 0;
+    for (int count : unitCounts)
+        unitCount += count != 0;
+
+    DeckCardSkillDetail emptySkill{};
+    std::array<std::array<PreparedScoreSkill, 2>, 5> preparedSkills{};
+    int doubleSkillMask = 0;
+    int needEnumerateStatusMask = 0;
+    for (int i = 0; i < cardCount; ++i) {
+        const auto& card = *cardDetails[i];
+        auto& before = preparedSkills[i][0];
+        auto& after = preparedSkills[i][1];
+        before.detail = &emptySkill;
+        after.detail = &emptySkill;
+
+        for (auto units = card.unitMask; units; units &= units - 1) {
+            const int unit = std::countr_zero(units);
+            const auto& current = card.skill.get(unit, unitCounts[unit], 1);
+            if (current.scoreUp > after.scoreUp)
+                after = {&current, current.scoreUp};
+        }
+
+        bool needEnumerate = false;
+        const auto& referenceSkill = card.skill.get(Enums::Unit::ref, 1, 1);
+        const double referenceScoreUp = referenceSkill.scoreUp + referenceSkill.scoreUpReferenceMax;
+        if (referenceSkill.skillId != after.detail->skillId && referenceScoreUp > before.scoreUp) {
+            before = {&referenceSkill, referenceScoreUp};
+            needEnumerate = true;
+        }
+
+        const auto& differentUnitSkill = card.skill.get(Enums::Unit::diff, unitCount - 1, 1);
+        if (differentUnitSkill.skillId != after.detail->skillId &&
+            differentUnitSkill.scoreUp > before.scoreUp) {
+            before = {&differentUnitSkill, differentUnitSkill.scoreUp};
+            needEnumerate = false;
+        }
+
+        if (before.detail->skillId)
+            doubleSkillMask |= 1 << i;
+
+        if (keepAfterTrainingState) {
+            if (card.defaultImage != Enums::DefaultImage::special_training &&
+                after.detail->isAfterTraining) {
+                after = before;
+            }
+        }
+        else if (needEnumerate) {
+            needEnumerateStatusMask |= 1 << i;
+        }
+        else if (before.scoreUp > after.scoreUp) {
+            after = before;
+        }
+    }
+
+    std::array<const DeckCardSkillDetail*, 5> selectedSkills{};
+    std::array<double, 5> scoreValues{};
+    std::array<double, 5> referenceInputs{};
+    std::array<int, 5> order{};
+    std::array<double, 4> memberSkillMaxs{};
+    std::array<std::pair<int, int>, 32> scoreUps;
+    int scoreUpCount = 0;
+    for (int mask = needEnumerateStatusMask; mask >= 0;
+         mask = mask ? (mask - 1) & needEnumerateStatusMask : -1) {
+        for (int i = 0; i < cardCount; ++i) {
+            const auto& selected = preparedSkills[i][(mask & (1 << i)) ? 0 : 1];
+            selectedSkills[i] = selected.detail;
+            scoreValues[i] = selected.scoreUp;
+            referenceInputs[i] = selected.scoreUp;
+        }
+
+        for (int i = 0; i < cardCount; ++i) {
+            const auto& skill = *selectedSkills[i];
+            if (!skill.hasScoreUpReference)
+                continue;
+
+            scoreValues[i] -= skill.scoreUpReferenceMax;
+            int memberSkillCount = 0;
+            for (int j = 0; j < cardCount; ++j) {
+                if (i == j)
+                    continue;
+                double value = referenceInputs[j];
+                value = std::min(
+                    std::floor(value * skill.scoreUpReferenceRate / 100.0),
+                    skill.scoreUpReferenceMax
+                );
+                memberSkillMaxs[memberSkillCount++] = value;
+            }
+
+            double chosenSkillMax = 0.0;
+            if (skillReferenceChooseStrategy == SkillReferenceChooseStrategy::Max) {
+                chosenSkillMax = *std::max_element(
+                    memberSkillMaxs.begin(), memberSkillMaxs.begin() + memberSkillCount
+                );
+            }
+            else if (skillReferenceChooseStrategy == SkillReferenceChooseStrategy::Min) {
+                chosenSkillMax = *std::min_element(
+                    memberSkillMaxs.begin(), memberSkillMaxs.begin() + memberSkillCount
+                );
+            }
+            else if (skillReferenceChooseStrategy == SkillReferenceChooseStrategy::Average) {
+                chosenSkillMax = std::accumulate(
+                    memberSkillMaxs.begin(), memberSkillMaxs.begin() + memberSkillCount, 0.0
+                ) / memberSkillCount;
+            }
+            scoreValues[i] += chosenSkillMax;
+        }
+
+        std::iota(order.begin(), order.begin() + cardCount, 0);
+        if (bestSkillAsLeader) {
+            const int bestIndex = std::max_element(
+                order.begin(), order.begin() + cardCount,
+                [&scoreValues, &cardDetails](int x, int y) {
+                    return std::tuple(scoreValues[x], -cardDetails[x]->cardId) <
+                        std::tuple(scoreValues[y], -cardDetails[y]->cardId);
+                }
+            ) - order.begin();
+            if (bestIndex != 0)
+                std::swap(order[0], order[bestIndex]);
+        }
+        else {
+            std::sort(
+                order.begin() + 1, order.begin() + cardCount,
+                [&cardDetails](int x, int y) {
+                    return cardDetails[x]->cardId < cardDetails[y]->cardId;
+                }
+            );
+        }
+
+        double leaderScoreUp = 0.0;
+        double otherScoreUpSum = 0.0;
+        for (int index : order) {
+            if (index == 0)
+                leaderScoreUp = scoreValues[index];
+            else
+                otherScoreUpSum += scoreValues[index];
+        }
+        bool skip = false;
+        for (int i = 0; i < scoreUpCount; ++i) {
+            const auto& scoreUp = scoreUps[i];
+            if (scoreUp.first >= leaderScoreUp && scoreUp.second >= otherScoreUpSum) {
+                skip = true;
+                break;
+            }
+        }
+        if (skip)
+            continue;
+        scoreUps[scoreUpCount++] = {leaderScoreUp, otherScoreUpSum};
+
+        double multiLiveScoreUp = scoreValues[order[0]];
+        for (int i = 1; i < cardCount; ++i)
+            multiLiveScoreUp += scoreValues[order[i]] * 0.2;
+
+        consume(
+            selectedSkills,
+            scoreValues,
+            referenceInputs,
+            order,
+            doubleSkillMask,
+            mask,
+            multiLiveScoreUp
+        );
+    }
+}
+
+}
+
+
 DeckBonusInfo DeckCalculator::getDeckBonus(
     const std::vector<const CardDetail *> &deckCards, 
     std::optional<int> eventType,
@@ -251,161 +435,121 @@ void DeckCalculator::forEachDeckState(
         powerCalculation.total.total = std::min(powerCalculation.total.total, 336000);
     }
 
-    // 预处理队伍，存储每个队伍出现的次数
-    int card_num = int(cardDetails.size());
-    int unit_num = 0;
-    for (int i = 0; i < 16; ++i) 
-        unit_num += bool(powerCalculation.unitCounts[i]);
-
-    // 计算当前卡组每个卡牌的花前/花后固定技能效果（进Live之前）
-    std::array<std::array<DeckCardSkillDetail, 2>, 5> prepareSkills{};
-    int doubleSkillMask = 0;
-    int needEnumerateStatusMask = 0;  
-    int needEnumerateCount = 0;
-
-    for (int i = 0; i < card_num; ++i) {
-        auto& cardDetail = *cardDetails[i];
-        // 直接写入 prepareSkills（已零初始化），避免逐卡 112B 结构体拷贝
-        auto& s1 = prepareSkills[i][0];
-        auto& s2 = prepareSkills[i][1];
-        // 获取普通技能效果（所有普通技能&bf花后）
-        // 组分技能效果（对vs有多个组合取最大）或 固定技能效果
-        for (auto units = cardDetail.unitMask; units; units &= units - 1) {
-            const auto unit = std::countr_zero(units);
-            const auto& current = cardDetail.skill.get(unit, powerCalculation.unitCounts[unit], 1);
-            if (current.scoreUp > s2.scoreUp) s2 = current;
-        }
-
-        // 获取双技能的花前技能效果，以及判断是否需要枚举技能状态
-        bool needEnumerate = false;
-
-        // 吸分技能效果(max)
-        const auto& referenceSkill = cardDetail.skill.get(Enums::Unit::ref, 1, 1);
-        const double referenceScoreUp = referenceSkill.scoreUp + referenceSkill.scoreUpReferenceMax;
-        if (referenceSkill.skillId != s2.skillId && referenceScoreUp > s1.scoreUp) {
-            s1 = referenceSkill;
-            s1.scoreUp = referenceScoreUp;
-            needEnumerate = true;   // 吸分技能需要枚举
-        }
-        // 异组技能效果
-        const auto& differentUnitSkill = cardDetail.skill.get(Enums::Unit::diff, unit_num - 1, 1);
-        if (differentUnitSkill.skillId != s2.skillId && differentUnitSkill.scoreUp > s1.scoreUp) {
-            s1 = differentUnitSkill;
-            needEnumerate = false;  // 异组技能不需要枚举
-        }
-
-        // 记录有双技能的位置
-        if(s1.skillId) doubleSkillMask |= (1 << i);
-
-        if (keepAfterTrainingState) {
-            // 如果指定不改变状态，则无论如何都不枚举，并且根据用户选择的状态设置
-            if(cardDetail.defaultImage != Enums::DefaultImage::special_training && s2.isAfterTraining)
-                s2 = s1; // 用户设置花前技能
-        } else {
-            if (needEnumerate) {
-                // 需要枚举则记录需要枚举的位置
-                needEnumerateStatusMask |= (1 << i);
-                needEnumerateCount++;
-            } else {
-                // 不需要枚举则花后设置为两个技能的最大
-                if (s1.scoreUp > s2.scoreUp) s2 = s1;
+    const int cardCount = static_cast<int>(cardDetails.size());
+    forEachSkillScoreState(
+        cardDetails,
+        powerCalculation.unitCounts,
+        skillReferenceChooseStrategy,
+        keepAfterTrainingState,
+        bestSkillAsLeader,
+        [&](const auto& selectedSkills,
+            const auto& scoreValues,
+            const auto& referenceInputs,
+            const auto& order,
+            int doubleSkillMask,
+            int statusMask,
+            double multiLiveScoreUp) {
+            std::array<DeckCardSkillDetail, 5> skills{};
+            for (int i = 0; i < cardCount; ++i) {
+                skills[i] = *selectedSkills[i];
+                skills[i].scoreUp = scoreValues[i];
+                skills[i].scoreUpToReference = referenceInputs[i];
             }
-        }
-    }
-
-    // 枚举技能状态，计算当前卡组的实际技能效果（包括选择花前/花后技能），并归纳卡牌在队伍中的详情信息
-    std::array<DeckCardSkillDetail, 5> skills{};
-    std::array<int, 5> order{};
-    std::array<double, 4> memberSkillMaxs{};
-    std::array<std::pair<int, int>, 32> scoreUps{};
-    int scoreUpCount = 0;
-    for (int mask = needEnumerateStatusMask; mask >= 0; mask = mask ? (mask - 1) & needEnumerateStatusMask : -1) {
-        // 根据mask枚举花前/花后技能状态，计算实际技能
-        for (int i = 0; i < card_num; ++i) {
-            auto& s1 = prepareSkills[i][0]; // 花前技能
-            auto& s2 = prepareSkills[i][1]; // 花后技能（或者已经被花前技能替换的技能）
-            auto& s = (mask & (1 << i)) ? s1 : s2; // 实际技能，0为花后技能，1为花前技能
-            s.scoreUpToReference = s.scoreUp; // 此时的值为吸分技能能吸取的值
-            skills[i] = s;
-        } 
-
-        // 计算枚举状态的技能的实际值
-        for (int i = 0; i < card_num; ++i) {
-            auto& s = skills[i];
-
-            // 吸分
-            if (s.hasScoreUpReference) {
-                s.scoreUp -= s.scoreUpReferenceMax; // 从max回到还没吸的基础值
-                int memberSkillCount = 0;
-                // 收集其他成员的技能最大值
-                for (int j = 0; j < card_num; ++j) if (i != j) {
-                    double m = skills[j].scoreUpToReference;
-                    m = std::min(std::floor(m * s.scoreUpReferenceRate / 100.), s.scoreUpReferenceMax);
-                    memberSkillMaxs[memberSkillCount++] = m;
-                }
-                // 不同选择策略
-                double chosenSkillMax = 0;
-                if (skillReferenceChooseStrategy == SkillReferenceChooseStrategy::Max) 
-                    chosenSkillMax = *std::max_element(memberSkillMaxs.begin(), memberSkillMaxs.begin() + memberSkillCount);
-                else if (skillReferenceChooseStrategy == SkillReferenceChooseStrategy::Min)
-                    chosenSkillMax = *std::min_element(memberSkillMaxs.begin(), memberSkillMaxs.begin() + memberSkillCount);
-                else if (skillReferenceChooseStrategy == SkillReferenceChooseStrategy::Average)
-                    chosenSkillMax = std::accumulate(memberSkillMaxs.begin(), memberSkillMaxs.begin() + memberSkillCount, 0.0) / memberSkillCount;
-                s.scoreUp += chosenSkillMax; 
-            } 
-        }
-
-        std::iota(order.begin(), order.begin() + card_num, 0);
-        if (bestSkillAsLeader) {
-            // 如果需要，调整最大技能的卡为队长
-            int bestIndex = std::max_element(order.begin(), order.begin() + card_num, [&skills, &cardDetails](int x, int y) {
-                return std::tuple(skills[x].scoreUp, -cardDetails[x]->cardId) < std::tuple(skills[y].scoreUp, -cardDetails[y]->cardId);
-            }) - order.begin();
-            if (bestIndex != 0) std::swap(order[0], order[bestIndex]);
-        } else {
-            // 否则只需要队长之后的按卡牌ID排序
-            std::sort(order.begin() + 1, order.begin() + card_num, [&cardDetails](int x, int y) {
-                return cardDetails[x]->cardId < cardDetails[y]->cardId;
+            consume(DeckStateView{
+                cardDetails,
+                eventBonusInfo,
+                supportDeckBonus.bonus,
+                powerCalculation,
+                skills,
+                order,
+                cardCount,
+                doubleSkillMask,
+                statusMask,
+                multiLiveScoreUp,
             });
         }
+    );
+}
 
-        // 检查当前队长技能/其他成员技能的总和，如果都劣于或等于之前某组，则不用考虑该组
-        // 分开考虑队长和其他成员，是考虑到协力和单人live技能机制不同
-        double leaderScoreUp = 0, otherScoreUpSum = 0;
-        for (auto i : order) {
-            if (i == 0) leaderScoreUp = skills[i].scoreUp;
-            else otherScoreUpSum += skills[i].scoreUp;
-        }
-        bool skip = false;
-        for (int i = 0; i < scoreUpCount; ++i) {
-            const auto& scoreUp = scoreUps[i];
-            if (scoreUp.first >= leaderScoreUp && scoreUp.second >= otherScoreUpSum) {
-                skip = true;
-                break;
-            }
-        }
-        if (skip) continue;
-        scoreUps[scoreUpCount++] = { leaderScoreUp, otherScoreUpSum };
 
-        // 计算多人live的技能实效
-        double multiLiveScoreUp = 0;
-        multiLiveScoreUp += skills[order[0]].scoreUp;
-        for (int i = 1; i < card_num; ++i) 
-            multiLiveScoreUp += skills[order[i]].scoreUp * 0.2;
+void DeckCalculator::forEachMultiLiveScoreState(
+    const std::vector<const CardDetail*>& cardDetails,
+    SupportDeckMap& supportCards,
+    const MultiLiveScoreStateConsumer& consume,
+    int honorBonus,
+    std::optional<int> eventType,
+    std::optional<int> eventId,
+    SkillReferenceChooseStrategy skillReferenceChooseStrategy,
+    bool keepAfterTrainingState,
+    bool bestSkillAsLeader
+) {
+    const auto eventBonus = getDeckBonus(cardDetails, eventType, eventId).totalBonus;
 
-        consume(DeckStateView{
+    double supportDeckBonus = 0.0;
+    if (!supportCards.empty()) {
+        SupportDeckCards* selectedSupportCards = nullptr;
+        if (eventId.value_or(0) == finalChapterEventId)
+            selectedSupportCards = &supportCards[cardDetails[0]->characterId];
+        else
+            selectedSupportCards = &supportCards.begin()->second;
+        supportDeckBonus = getSupportDeckBonus(
             cardDetails,
-            eventBonusInfo,
-            supportDeckBonus.bonus,
-            powerCalculation,
-            skills,
-            order,
-            card_num,
-            doubleSkillMask,
-            mask,
-            multiLiveScoreUp,
-        });
+            *selectedSupportCards,
+            getWorldBloomSupportDeckCount(eventId.value_or(0))
+        ).bonus;
     }
+
+    int attrMap[16] = {};
+    std::array<int, 16> unitCounts{};
+    for (const auto* card : cardDetails) {
+        ++attrMap[card->attr];
+        for (auto units = card->unitMask; units; units &= units - 1)
+            ++unitCounts[std::countr_zero(units)];
+    }
+    int power = honorBonus;
+    for (const auto* card : cardDetails) {
+        const int attrState = attrMap[card->attr] == 5 ? 1 : 0;
+        int best = 0;
+        int slot = 0;
+        for (auto units = card->unitMask; units; units &= units - 1, ++slot) {
+            const int unit = std::countr_zero(units);
+            const int state = (unitCounts[unit] == 5 ? 2 : 0) + attrState;
+            best = std::max(best, card->powerTotals[slot][state]);
+        }
+        power += best;
+    }
+    if (eventType == Enums::EventType::world_bloom &&
+        dataProvider.masterData->getWorldBloomEventTurn(eventId.value_or(0)) == 3) {
+        power = std::min(power, 336000);
+    }
+
+    forEachSkillScoreState(
+        cardDetails,
+        unitCounts,
+        skillReferenceChooseStrategy,
+        keepAfterTrainingState,
+        bestSkillAsLeader,
+        [&](const auto&,
+            const auto& scoreValues,
+            const auto&,
+            const auto& order,
+            int,
+            int statusMask,
+            double multiLiveScoreUp) {
+            std::array<double, 5> orderedSkillScoreUps{};
+            for (int i = 0; i < 5; ++i)
+                orderedSkillScoreUps[i] = scoreValues[order[i]];
+            consume(MultiLiveScoreStateView{
+                power,
+                eventBonus,
+                supportDeckBonus,
+                orderedSkillScoreUps,
+                cardDetails[order[0]]->cardId,
+                statusMask,
+                multiLiveScoreUp,
+            });
+        }
+    );
 }
 
 

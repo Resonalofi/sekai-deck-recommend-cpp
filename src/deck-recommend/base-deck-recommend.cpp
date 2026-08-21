@@ -151,64 +151,110 @@ BestPermutationResult BaseDeckRecommend::getBestPermutation(
         BestPermutationResult result{};
         double maxValue{};
     } context{scoreFunc, config};
-    deckCalculator.forEachDeckState(
-        deckCards,
-        supportCards,
-        [context = &context](const DeckStateView& state) {
-            DeckScoreDetail scoreDetail{
-                .power = state.power.total,
-                .eventBonus = state.eventBonus.totalBonus,
-                .supportDeckBonus = state.supportDeckBonus,
-                .cardCount = 5,
-                .multiLiveScoreUp = state.multiLiveScoreUp,
+    const auto consumeState = [context = &context](
+        int power,
+        double eventBonus,
+        double supportDeckBonus,
+        const std::array<double, 5>& skillScoreUps,
+        int leaderCardId,
+        int statusMask,
+        double multiLiveScoreUp
+    ) {
+        DeckScoreDetail scoreDetail{
+            .power = {.total = power},
+            .eventBonus = eventBonus,
+            .supportDeckBonus = supportDeckBonus,
+            .skillScoreUps = skillScoreUps,
+            .cardCount = 5,
+            .multiLiveScoreUp = multiLiveScoreUp,
+        };
+        const auto score = context->scoreFunc(scoreDetail);
+        const double value = score.score + score.liveScore * 1e-7;
+
+        context->result.maxTargetValue = std::max(context->result.maxTargetValue, value);
+        context->result.maxMultiLiveScoreUp = std::max(
+            context->result.maxMultiLiveScoreUp, multiLiveScoreUp
+        );
+        if (multiLiveScoreUp < context->config.multiScoreUpLowerBound)
+            return;
+
+        if (value > context->maxValue) {
+            context->maxValue = value;
+            RecommendCandidate candidate{
+                .score = score,
+                .multiLiveScoreUp = multiLiveScoreUp,
+                .power = power,
+                .leaderCardId = leaderCardId,
+                .statusMask = statusMask,
             };
-            for (int pos = 0; pos < 5; ++pos)
-                scoreDetail.skillScoreUps[pos] = state.skills[state.order[pos]].scoreUp;
-
-            auto score = context->scoreFunc(scoreDetail);
-            double value = score.score + score.liveScore * 1e-7;
-
-            context->result.maxTargetValue = std::max(context->result.maxTargetValue, value);
-            context->result.maxMultiLiveScoreUp = std::max(
-                context->result.maxMultiLiveScoreUp, state.multiLiveScoreUp
-            );
-
-            if (state.multiLiveScoreUp < context->config.multiScoreUpLowerBound)
-                return;
-
-            if (value > context->maxValue) {
-                context->maxValue = value;
-                RecommendCandidate candidate{
-                    .score = score,
-                    .multiLiveScoreUp = state.multiLiveScoreUp,
-                    .power = state.power.total.total,
-                    .leaderCardId = state.cardDetails[state.order[0]]->cardId,
-                    .statusMask = state.statusMask,
-                };
-                if (context->config.target == RecommendTarget::Mysekai) {
-                    candidate.targetValue = score.mysekaiInternalPoint;
-                    candidate.resultScore = 0;
-                }
-                else {
-                    candidate.resultScore = score.score;
-                    if (context->config.target == RecommendTarget::Power)
-                        candidate.targetValue = candidate.power + double(score.score) / SCORE_MAX;
-                    else if (context->config.target == RecommendTarget::Skill)
-                        candidate.targetValue = state.multiLiveScoreUp + double(score.score) / SCORE_MAX;
-                    else
-                        candidate.targetValue = score.score + double(score.liveScore) / SCORE_MAX;
-                }
-                context->result.bestCandidate = candidate;
+            if (context->config.target == RecommendTarget::Mysekai) {
+                candidate.targetValue = score.mysekaiInternalPoint;
+                candidate.resultScore = 0;
             }
-        },
-        honorBonus,
-        eventType,
-        eventId,
-        config.skillReferenceChooseStrategy,
-        config.keepAfterTrainingState,
-        bestSkillAsLeader,
-        /*slimPower=*/true
-    );
+            else {
+                candidate.resultScore = score.score;
+                if (context->config.target == RecommendTarget::Power)
+                    candidate.targetValue = candidate.power + double(score.score) / SCORE_MAX;
+                else if (context->config.target == RecommendTarget::Skill)
+                    candidate.targetValue = multiLiveScoreUp + double(score.score) / SCORE_MAX;
+                else
+                    candidate.targetValue = score.score + double(score.liveScore) / SCORE_MAX;
+            }
+            context->result.bestCandidate = candidate;
+        }
+    };
+
+    if (config.target == RecommendTarget::Score &&
+        deckCards.size() == 5 && Enums::LiveType::isMulti(liveType)) {
+        deckCalculator.forEachMultiLiveScoreState(
+            deckCards,
+            supportCards,
+            [&consumeState](const MultiLiveScoreStateView& state) {
+                consumeState(
+                    state.power,
+                    state.eventBonus,
+                    state.supportDeckBonus,
+                    state.skillScoreUps,
+                    state.leaderCardId,
+                    state.statusMask,
+                    state.multiLiveScoreUp
+                );
+            },
+            honorBonus,
+            eventType,
+            eventId,
+            config.skillReferenceChooseStrategy,
+            config.keepAfterTrainingState,
+            bestSkillAsLeader
+        );
+    }
+    else {
+        deckCalculator.forEachDeckState(
+            deckCards,
+            supportCards,
+            [&consumeState](const DeckStateView& state) {
+                std::array<double, 5> skillScoreUps{};
+                for (int pos = 0; pos < 5; ++pos)
+                    skillScoreUps[pos] = state.skills[state.order[pos]].scoreUp;
+                consumeState(
+                    state.power.total.total,
+                    state.eventBonus.totalBonus,
+                    state.supportDeckBonus,
+                    skillScoreUps,
+                    state.cardDetails[state.order[0]]->cardId,
+                    state.statusMask,
+                    state.multiLiveScoreUp
+                );
+            },
+            honorBonus,
+            eventType,
+            eventId,
+            config.skillReferenceChooseStrategy,
+            config.keepAfterTrainingState,
+            bestSkillAsLeader,
+            /*slimPower=*/true
+        );
+    }
     return context.result;
 }
 
