@@ -446,49 +446,44 @@ void BaseDeckRecommend::findBestCardsDFS(
 
         if (deckCards.size() >= cIndex + 2) {
             auto& last = *deckCards.back();
-            bool lessThan = false;
-            bool greaterThan = false;
             if (cfg.target == RecommendTarget::Score) {
-                lessThan = this->cardCalculator.isCertainlyLessThan(last, *card);
-                greaterThan = this->cardCalculator.isCertainlyLessThan(*card, last);
-            } else if(cfg.target == RecommendTarget::Power) {
-                lessThan = last.power.isCertainlyLessThan(card->power);
-                greaterThan = card->power.isCertainlyLessThan(last.power);
-            } else if (cfg.target == RecommendTarget::Skill) {
-                lessThan = last.skill.isCertainlyLessThan(card->skill);
-                greaterThan = card->skill.isCertainlyLessThan(last.skill);
-            }
-            // 要求生成的卡组后面4个位置按强弱排序、同强度按卡牌ID排序
-            // 如果上一张卡肯定小，那就不符合顺序；
-            if (lessThan) continue;
-            // 在旗鼓相当的前提下（因为两两组合有四种情况，再排除掉这张卡肯定小的情况，就是旗鼓相当），要ID小
-            if (!greaterThan && card->cardId > last.cardId) continue;
-        }
-        
-        if (preCard) {
-            auto& pre = *preCard;
-            bool lessThan = false;
-
-            if (cfg.target == RecommendTarget::Score) {
-                lessThan = this->cardCalculator.isCertainlyLessThan(*card, pre);
-            } else if (cfg.target == RecommendTarget::Power) {
-                lessThan = card->power.isCertainlyLessThan(pre.power);
-            } else if (cfg.target == RecommendTarget::Skill) {
-                lessThan = card->skill.isCertainlyLessThan(pre.skill);
-            } else if (cfg.target == RecommendTarget::Mysekai) {
-                lessThan = this->cardCalculator.isCertainlyLessThan(*card, pre, true, false, true);
-            }
-
-            if (cfg.target == RecommendTarget::Score) {
-                // 如果肯定比上一次选定的卡牌要弱，那么舍去，让这张卡去后面再选
-                // 该优化较为激进，未考虑卡的协同效应，在计算分数最优的情况下才使用
-                if (lessThan) continue;
+                if (card->cardId > last.cardId) continue;
             } else {
+                bool lessThan = false;
+                bool greaterThan = false;
+                if (cfg.target == RecommendTarget::Power) {
+                    lessThan = last.power.isCertainlyLessThan(card->power);
+                    greaterThan = card->power.isCertainlyLessThan(last.power);
+                } else if (cfg.target == RecommendTarget::Skill) {
+                    lessThan = last.skill.isCertainlyLessThan(card->skill);
+                    greaterThan = card->skill.isCertainlyLessThan(last.skill);
+                }
+                // 要求生成的卡组后面4个位置按强弱排序、同强度按卡牌ID排序
+                // 如果上一张卡肯定小，那就不符合顺序；
+                if (lessThan) continue;
+                // 在旗鼓相当的前提下（因为两两组合有四种情况，再排除掉这张卡肯定小的情况，就是旗鼓相当），要ID小
+                if (!greaterThan && card->cardId > last.cardId) continue;
+            }
+        }
+
+        if (cfg.target != RecommendTarget::Score) {
+            if (preCard) {
+                auto& pre = *preCard;
+                bool lessThan = false;
+
+                if (cfg.target == RecommendTarget::Power) {
+                    lessThan = card->power.isCertainlyLessThan(pre.power);
+                } else if (cfg.target == RecommendTarget::Skill) {
+                    lessThan = card->skill.isCertainlyLessThan(pre.skill);
+                } else if (cfg.target == RecommendTarget::Mysekai) {
+                    lessThan = this->cardCalculator.isCertainlyLessThan(*card, pre, true, false, true);
+                }
+
                 // 计算实效或综合力最优时性能够用，使用较温和的优化
                 if (lessThan && deckCards.size() != member - 1) continue;
             }
+            preCard = card;
         }
-        preCard = card;
 
         // 第五张卡已经固定后，用逐分量严格上界提前拒绝必败候选。
         // 这里只调用原评分函数作 oracle，最终入队仍走完整卡组状态枚举。
