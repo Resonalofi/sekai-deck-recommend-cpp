@@ -6,6 +6,11 @@
 
 namespace {
 
+struct FifthCardScoreBoundPrefix {
+    std::array<double, 4> skillBounds{};
+    double bonusBound = 0.0;
+};
+
 #if defined(_MSC_VER)
 __declspec(noinline)
 #elif defined(__GNUC__) || defined(__clang__)
@@ -15,7 +20,8 @@ bool cannotBeatFifthCardScoreBound(
     const CardDetail* card,
     int honorBonus,
     const std::function<Score(const DeckScoreDetail&)>& scoreFunc,
-    const RecommendCalcInfo& dfsInfo
+    const RecommendCalcInfo& dfsInfo,
+    const FifthCardScoreBoundPrefix& prefix
 ) {
     const auto& deckCards = dfsInfo.deckCards;
     const bool allSameAttr = dfsInfo.deckAllSameAttr && card->attr == dfsInfo.deckAttr;
@@ -51,15 +57,15 @@ bool cannotBeatFifthCardScoreBound(
     }
 
     std::array<double, 5> skillBounds{};
-    int skillIndex = 0;
-    double bonusBound = dfsInfo.scoreBound.diffAttrBonus;
-    for (const auto* deckCard : deckCards) {
-        skillBounds[skillIndex++] = static_cast<double>(deckCard->skill.max) + 1.0;
-        bonusBound += deckCard->maxEventBonus.value_or(0.0);
+    std::copy(prefix.skillBounds.begin(), prefix.skillBounds.end(), skillBounds.begin());
+    const double candidateSkillBound = static_cast<double>(card->skill.max) + 1.0;
+    int insertAt = 4;
+    while (insertAt > 0 && candidateSkillBound > skillBounds[insertAt - 1]) {
+        skillBounds[insertAt] = skillBounds[insertAt - 1];
+        --insertAt;
     }
-    skillBounds[skillIndex] = static_cast<double>(card->skill.max) + 1.0;
-    bonusBound += card->maxEventBonus.value_or(0.0);
-    std::sort(skillBounds.begin(), skillBounds.end(), std::greater<>());
+    skillBounds[insertAt] = candidateSkillBound;
+    const double bonusBound = prefix.bonusBound + card->maxEventBonus.value_or(0.0);
 
     DeckScoreDetail upperBound{};
     upperBound.power.total = maxPower;
@@ -427,6 +433,26 @@ void BaseDeckRecommend::findBestCardsDFS(
     // 非完整卡组，继续遍历所有情况
     const CardDetail* preCard = nullptr;
     auto cIndex = fixedCards.size() + cfg.fixedCharacters.size();
+    FifthCardScoreBoundPrefix fifthCardScoreBoundPrefix{};
+    const bool useFifthCardScoreBound =
+        dfsInfo.scoreBound.enabled &&
+        Enums::LiveType::isMulti(liveType) &&
+        member == 5 &&
+        deckCards.size() == 4;
+    if (useFifthCardScoreBound) {
+        int skillIndex = 0;
+        fifthCardScoreBoundPrefix.bonusBound = dfsInfo.scoreBound.diffAttrBonus;
+        for (const auto* deckCard : deckCards) {
+            fifthCardScoreBoundPrefix.skillBounds[skillIndex++] =
+                static_cast<double>(deckCard->skill.max) + 1.0;
+            fifthCardScoreBoundPrefix.bonusBound += deckCard->maxEventBonus.value_or(0.0);
+        }
+        std::sort(
+            fifthCardScoreBoundPrefix.skillBounds.begin(),
+            fifthCardScoreBoundPrefix.skillBounds.end(),
+            std::greater<>()
+        );
+    }
     // 兼容候选列表只会在深度 cIndex+1 构建一次，供整棵子树只读使用，可安全复用缓冲
     std::vector<const CardDetail*>& compatibleCards = dfsInfo.compatibleScratch;
     for (const auto* card : cardDetails) {
@@ -487,12 +513,11 @@ void BaseDeckRecommend::findBestCardsDFS(
 
         // 第五张卡已经固定后，用逐分量严格上界提前拒绝必败候选。
         // 这里只调用原评分函数作 oracle，最终入队仍走完整卡组状态枚举。
-        if (dfsInfo.scoreBound.enabled &&
-            Enums::LiveType::isMulti(liveType) &&
-            member == 5 &&
-            deckCards.size() == 4 &&
+        if (useFifthCardScoreBound &&
             int(dfsInfo.deckQueue.size()) >= limit &&
-            cannotBeatFifthCardScoreBound(card, honorBonus, scoreFunc, dfsInfo))
+            cannotBeatFifthCardScoreBound(
+                card, honorBonus, scoreFunc, dfsInfo, fifthCardScoreBoundPrefix
+            ))
             continue;
 
         // 递归，寻找所有情况
