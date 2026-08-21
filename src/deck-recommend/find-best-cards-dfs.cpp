@@ -4,6 +4,80 @@
 #include <numeric>
 
 
+namespace {
+
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#endif
+bool cannotBeatFifthCardScoreBound(
+    const CardDetail* card,
+    int honorBonus,
+    const std::function<Score(const DeckScoreDetail&)>& scoreFunc,
+    const RecommendCalcInfo& dfsInfo
+) {
+    const auto& deckCards = dfsInfo.deckCards;
+    const bool allSameAttr = dfsInfo.deckAllSameAttr && card->attr == dfsInfo.deckAttr;
+    const auto commonUnitMask = dfsInfo.deckCommonUnitMask & card->unitMask;
+    int maxPower = honorBonus;
+    if (commonUnitMask == 0) {
+        maxPower += dfsInfo.deckMixedUnitPowerTotals[allSameAttr];
+        maxPower += std::max(
+            card->powerTotals[0][allSameAttr],
+            card->powerTotals[1][allSameAttr]
+        );
+    }
+    else {
+        const auto addCardPower = [&](const CardDetail* deckCard) {
+            int cardPower = 0;
+            int unitIndex = 0;
+            for (auto units = deckCard->unitMask;
+                 units;
+                 units &= units - 1, ++unitIndex) {
+                const int unit = std::countr_zero(units);
+                if (commonUnitMask & (uint16_t{1} << unit)) {
+                    cardPower = std::max(
+                        cardPower,
+                        deckCard->powerTotals[unitIndex][2 + allSameAttr]
+                    );
+                }
+            }
+            maxPower += cardPower;
+        };
+        for (const auto* deckCard : deckCards)
+            addCardPower(deckCard);
+        addCardPower(card);
+    }
+
+    std::array<double, 5> skillBounds{};
+    int skillIndex = 0;
+    double bonusBound = dfsInfo.scoreBound.diffAttrBonus;
+    for (const auto* deckCard : deckCards) {
+        skillBounds[skillIndex++] = static_cast<double>(deckCard->skill.max) + 1.0;
+        bonusBound += deckCard->maxEventBonus.value_or(0.0);
+    }
+    skillBounds[skillIndex] = static_cast<double>(card->skill.max) + 1.0;
+    bonusBound += card->maxEventBonus.value_or(0.0);
+    std::sort(skillBounds.begin(), skillBounds.end(), std::greater<>());
+
+    DeckScoreDetail upperBound{};
+    upperBound.power.total = maxPower;
+    upperBound.eventBonus = bonusBound;
+    upperBound.supportDeckBonus = dfsInfo.scoreBound.supportDeckBonus;
+    upperBound.skillScoreUps = skillBounds;
+    upperBound.cardCount = 5;
+    upperBound.multiLiveScoreUp = skillBounds.front() + 0.2 * std::accumulate(
+        skillBounds.begin() + 1, skillBounds.end(), 0.0
+    );
+    const auto score = scoreFunc(upperBound);
+    const double targetValue = score.score + double(score.liveScore) / SCORE_MAX;
+    return targetValue < dfsInfo.deckQueue.top().targetValue;
+}
+
+}  // namespace
+
+
 void DfsScoreBoundIndex::build(
     const std::vector<const CardDetail*>& cards,
     std::vector<int>& powers
@@ -415,6 +489,16 @@ void BaseDeckRecommend::findBestCardsDFS(
             }
         }
         preCard = card;
+
+        // 第五张卡已经固定后，用逐分量严格上界提前拒绝必败候选。
+        // 这里只调用原评分函数作 oracle，最终入队仍走完整卡组状态枚举。
+        if (dfsInfo.scoreBound.enabled &&
+            Enums::LiveType::isMulti(liveType) &&
+            member == 5 &&
+            deckCards.size() == 4 &&
+            int(dfsInfo.deckQueue.size()) >= limit &&
+            cannotBeatFifthCardScoreBound(card, honorBonus, scoreFunc, dfsInfo))
+            continue;
 
         // 递归，寻找所有情况
         const auto previousCommonUnitMask = dfsInfo.deckCommonUnitMask;
