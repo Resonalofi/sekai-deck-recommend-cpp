@@ -253,20 +253,23 @@ void BaseDeckRecommend::findWorldBloomTargetBonusCardsDFS(
                 std::vector<const CardDetail *> deckCards{};
                 for (auto key : resultKeys) 
                     deckCards.push_back(bonusCharaCards[key].front()); 
-                // 计算卡组详情
-                auto candidate = getBestPermutation(
+                // 计算卡组详情。实效下限会把全部技能状态过滤掉，此时没有候选，
+                // 与分数目标一样跳过该卡组而不是取空 optional。
+                auto best = getBestPermutation(
                     deckCalculator, deckCards, emptySupportCards, scoreFunc,
                     0, eventType, eventId, liveType, config
-                ).bestCandidate.value();
+                );
+                if (!best.bestCandidate.has_value())
+                    continue;
                 auto deckRes = materializeCandidate(
                     deckCalculator, deckCards, emptySupportCards,
-                    0, eventType, eventId, config, candidate
+                    0, eventType, eventId, config, best.bestCandidate.value()
                 );
                 // 需要验证加成正确
                 if(std::abs(deckRes.eventBonus.value_or(0) * 2 - bonus) < 1e-6)
                     dfsInfo.update(deckRes, 1e9);
                 else
-                    std::cerr << "Warning: World Bloom bonus mismatch, expected " 
+                    std::cerr << "Warning: World Bloom bonus mismatch, expected "
                             << bonus / 2.0 << ", got " 
                             << deckRes.eventBonus.value_or(0) << std::endl;
             }
