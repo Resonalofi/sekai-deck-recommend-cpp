@@ -119,13 +119,22 @@ bool dfsWorldBloomBonus(
         if (!it->second) continue; // 跳过没有卡牌
         lowestBonus += bonus, --rest;
     }
-    it = hasBonusCharaCards.end(), --it;
-    for (int rest = config.member - (int)current.size(); rest > 0; --it) {
-        auto [chara, attr, bonus] = getCharaAttrBonus(it->first);
-        if (charaVis & (uint32_t{1} << chara)) continue; // 跳过重复角色
-        if (!it->second) continue; // 跳过没有卡牌
-        highestBonus += bonus, --rest;
-        if (it == start_it) break;  // 需要包含start_it（还没取）
+    // 从后往前取最高加成。跳过条目时不能顺带把迭代器递减出 begin()：
+    // 可用条目少于 rest 时会一路减到头，越过 begin() 属未定义行为，
+    // 实测表现为直接段错误或空转不返回，而超时检查在本段之前、拦不住。
+    if (!hasBonusCharaCards.empty()) {
+        it = hasBonusCharaCards.end(), --it;
+        for (int rest = config.member - (int)current.size(); rest > 0; ) {
+            auto [chara, attr, bonus] = getCharaAttrBonus(it->first);
+            bool skip = (charaVis & (uint32_t{1} << chara))  // 跳过重复角色
+                || !it->second;                              // 跳过没有卡牌
+            if (!skip) {
+                highestBonus += bonus, --rest;
+                if (it == start_it) break;  // 需要包含start_it（还没取）
+            }
+            if (it == hasBonusCharaCards.begin()) break;
+            --it;
+        }
     }
     // 最低加成假设为当前异色数（因为加入新卡异色数只会变多），最高加成假设为全异色
     if(currentBonus + currentDiffAttrBonus + lowestBonus  > *targets.rbegin()

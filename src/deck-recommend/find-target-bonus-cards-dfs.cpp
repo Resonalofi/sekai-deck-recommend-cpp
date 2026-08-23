@@ -97,13 +97,22 @@ bool dfsBonus(
         if (!it->second) continue; // 跳过没有卡牌
         lowestBonus += bonus, --rest;
     }
-    it = hasBonusCharaCards.end(), --it;
-    for (int rest = config.member - (int)current.size(); rest > 0; --it) {
-        auto [bonus, chara] = getBonusChara(it->first);
-        if (charaVis.find(chara) != charaVis.end()) continue; // 跳过重复角色
-        if (!it->second) continue; // 跳过没有卡牌
-        highestBonus += bonus, --rest;
-        if (it == start_it) break;  // 需要包含start_it（还没取）
+    // 从后往前取最高加成。跳过条目时不能顺带把迭代器递减出 begin()：
+    // 可用条目少于 rest 时会一路减到头，越过 begin() 属未定义行为，
+    // 实测表现为直接段错误或空转不返回，而超时检查在本段之前、拦不住。
+    if (!hasBonusCharaCards.empty()) {
+        it = hasBonusCharaCards.end(), --it;
+        for (int rest = config.member - (int)current.size(); rest > 0; ) {
+            auto [bonus, chara] = getBonusChara(it->first);
+            bool skip = charaVis.find(chara) != charaVis.end()  // 跳过重复角色
+                || !it->second;                                 // 跳过没有卡牌
+            if (!skip) {
+                highestBonus += bonus, --rest;
+                if (it == start_it) break;  // 需要包含start_it（还没取）
+            }
+            if (it == hasBonusCharaCards.begin()) break;
+            --it;
+        }
     }
     if(currentBonus + lowestBonus > *targets.rbegin() || currentBonus + highestBonus < *targets.begin()) 
         return true;
