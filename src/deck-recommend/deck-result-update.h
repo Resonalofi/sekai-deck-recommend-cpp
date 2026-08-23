@@ -183,6 +183,8 @@ struct RecommendCalcInfo {
     int deckAttr = 0;
     bool deckAllSameAttr = true;
     std::array<int, 2> deckMixedUnitPowerTotals{};
+    // 分数上界复用的评分入参；每次进上界块会覆盖评分链读取的全部字段
+    DeckScoreDetail upperBoundScratch{};
     std::unordered_map<uint64_t, double> deckTargetValueMap{};
     // 分数上界整枝的预计算量，由 recommendHighScoreDeck 一次算好
     ScoreUpperBoundInfo scoreBound{};

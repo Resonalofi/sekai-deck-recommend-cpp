@@ -6,6 +6,17 @@
 
 namespace {
 
+// 把最大值换到 0 号位，其余位置顺序不变。
+// 多人评分只读 front() 与 [1..) 的和，故无须全排序。
+inline void moveMaxToFront(double* values, int count) {
+    int best = 0;
+    for (int i = 1; i < count; ++i)
+        if (values[i] > values[best])
+            best = i;
+    if (best != 0)
+        std::swap(values[0], values[best]);
+}
+
 // 把一个 (值, 角色) 插入按值降序的定长候选表；值不为正的项一律丢弃
 template<typename Entry, typename Value>
 void insertScoreBoundTop(Entry* tops, int topCount, Value value, int character) {
@@ -352,7 +363,10 @@ void BaseDeckRecommend::findBestCardsDFS(
             for (const auto* card : deckCards)
                 skillBounds[skillBoundCount++] = static_cast<double>(card->skill.max) + 1.0;
             skillBounds[skillBoundCount++] = availableSkillBound;
-            std::sort(skillBounds.begin(), skillBounds.begin() + skillBoundCount, std::greater<>());
+            if (Enums::LiveType::isMulti(liveType))
+                moveMaxToFront(skillBounds.data(), skillBoundCount);
+            else
+                std::sort(skillBounds.begin(), skillBounds.begin() + skillBoundCount, std::greater<>());
 
             bonusBound = dfsInfo.scoreBound.diffAttrBonus;
             for (const auto* card : deckCards)
@@ -428,7 +442,10 @@ void BaseDeckRecommend::findBestCardsDFS(
                 skillBounds[skillBoundCount++] = static_cast<double>(card->skill.max) + 1.0;
             for (int i = 0; i < remaining; ++i)
                 skillBounds[skillBoundCount++] = availableSkillBounds[i];
-            std::sort(skillBounds.begin(), skillBounds.begin() + skillBoundCount, std::greater<>());
+            if (Enums::LiveType::isMulti(liveType))
+                moveMaxToFront(skillBounds.data(), skillBoundCount);
+            else
+                std::sort(skillBounds.begin(), skillBounds.begin() + skillBoundCount, std::greater<>());
 
             // 活动加成上界：队内卡按实际最大加成累加，空位取剩余角色中加成最大的几个。
             // 终章的扣减与当期上限、以及缺失加成时整队归零，都只会让实际值更小。
@@ -449,7 +466,8 @@ void BaseDeckRecommend::findBestCardsDFS(
 
         }
 
-        DeckScoreDetail upperBound{};
+        // 复用 scratch，省掉每次 112 字节清零；评分链读取的字段下面全部会赋值
+        DeckScoreDetail& upperBound = dfsInfo.upperBoundScratch;
         upperBound.power.total = maxPower;
         upperBound.eventBonus = bonusBound;
         upperBound.supportDeckBonus = dfsInfo.scoreBound.supportDeckBonus;
