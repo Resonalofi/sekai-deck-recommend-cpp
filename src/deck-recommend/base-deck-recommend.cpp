@@ -79,7 +79,9 @@ void BaseDeckRecommend::runRecommendAlgorithm(
             dfsCards.push_back(&card);
 
         if (info.scoreBound.enabled) {
-            info.scoreBoundIndex.build(dfsCards, info.scoreBoundPowerScratch);
+            info.scoreBoundIndex.build(
+                dfsCards, info.scoreBoundPowerScratch, info.scoreBoundPowerTops
+            );
         }
 
         // 插入固定卡牌

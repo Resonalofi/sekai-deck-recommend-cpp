@@ -96,19 +96,32 @@ struct ScoreUpperBoundInfo {
 struct DfsScoreBoundIndex {
     static constexpr int attrCount = 16;
     static constexpr int characterCount = 32;
+    // 队内已占角色不超过 5 - remaining 个，取 remaining 个可用值只需每组最大的 5 个候选
+    static constexpr int topCount = 5;
 
-    std::array<double, characterCount> skills{};
-    std::array<double, characterCount> bonuses{};
+    // 按值降序的角色候选；value <= 0 表示该位及其后为空
+    struct PowerTop {
+        int value = 0;
+        int character = 0;
+    };
+    struct ValueTop {
+        double value = 0.0;
+        int character = 0;
+    };
+
     uint16_t attrs = 0;
     uint16_t units = 0;
+    std::array<ValueTop, topCount> skillTops{};
+    std::array<ValueTop, topCount> bonusTops{};
 
     void build(
         const std::vector<const CardDetail*>& cards,
-        std::vector<int>& powers
+        std::vector<int>& powers,
+        std::vector<PowerTop>& powerTops
     );
 
-    const int* powerRow(
-        const std::vector<int>& powers,
+    const PowerTop* powerTopRow(
+        const std::vector<PowerTop>& powerTops,
         int attr,
         int unit
     ) const;
@@ -151,6 +164,9 @@ struct RecommendCalcInfo {
     DfsScoreBoundIndex scoreBoundIndex{};
     std::vector<int> compatibleScoreBoundPowers{};
     DfsScoreBoundIndex compatibleScoreBoundIndex{};
+    // 每个 (属性,组合) 组的角色综合力候选；与上面两份综合力表一一对应
+    std::vector<DfsScoreBoundIndex::PowerTop> scoreBoundPowerTops{};
+    std::vector<DfsScoreBoundIndex::PowerTop> compatibleScoreBoundPowerTops{};
 
     // 添加一个新结果
     void update(const RecommendDeck &deck, int limit);

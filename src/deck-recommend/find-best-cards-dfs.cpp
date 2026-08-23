@@ -6,6 +6,20 @@
 
 namespace {
 
+// 把一个 (值, 角色) 插入按值降序的定长候选表；值不为正的项一律丢弃
+template<typename Entry, typename Value>
+void insertScoreBoundTop(Entry* tops, int topCount, Value value, int character) {
+    if (!(value > tops[topCount - 1].value))
+        return;
+    int at = topCount - 1;
+    while (at > 0 && value > tops[at - 1].value) {
+        tops[at] = tops[at - 1];
+        --at;
+    }
+    tops[at].value = value;
+    tops[at].character = character;
+}
+
 struct FifthCardScoreBoundPrefix {
     std::array<double, 4> skillBounds{};
     double bonusBound = 0.0;
@@ -86,11 +100,15 @@ bool cannotBeatFifthCardScoreBound(
 
 void DfsScoreBoundIndex::build(
     const std::vector<const CardDetail*>& cards,
-    std::vector<int>& powers
+    std::vector<int>& powers,
+    std::vector<PowerTop>& powerTops
 ) {
     powers.assign(attrCount * UNIT_MAX * characterCount, 0);
-    skills.fill(0.0);
-    bonuses.fill(0.0);
+    powerTops.assign(attrCount * UNIT_MAX * topCount, PowerTop{});
+    std::array<double, characterCount> skills{};
+    std::array<double, characterCount> bonuses{};
+    skillTops.fill(ValueTop{});
+    bonusTops.fill(ValueTop{});
     attrs = 0;
     units = 0;
 
@@ -126,15 +144,36 @@ void DfsScoreBoundIndex::build(
             ));
         }
     }
+
+    for (int character = 0; character < characterCount; ++character) {
+        insertScoreBoundTop(skillTops.data(), topCount, skills[character], character);
+        insertScoreBoundTop(bonusTops.data(), topCount, bonuses[character], character);
+    }
+    // 只有 {无要求}∪attrs × {无要求}∪units 这些组会被查询，其余行不必整理
+    const auto fillPowerTops = [&](int attr, int unit) {
+        const int* row = &powers[(attr * UNIT_MAX + unit) * characterCount];
+        PowerTop* tops = &powerTops[(attr * UNIT_MAX + unit) * topCount];
+        for (int character = 0; character < characterCount; ++character)
+            insertScoreBoundTop(tops, topCount, row[character], character);
+    };
+    fillPowerTops(0, 0);
+    for (auto unitMask = units; unitMask; unitMask &= unitMask - 1)
+        fillPowerTops(0, std::countr_zero(unitMask));
+    for (auto attrMask = attrs; attrMask; attrMask &= attrMask - 1) {
+        const int attr = std::countr_zero(attrMask);
+        fillPowerTops(attr, 0);
+        for (auto unitMask = units; unitMask; unitMask &= unitMask - 1)
+            fillPowerTops(attr, std::countr_zero(unitMask));
+    }
 }
 
 
-const int* DfsScoreBoundIndex::powerRow(
-    const std::vector<int>& powers,
+const DfsScoreBoundIndex::PowerTop* DfsScoreBoundIndex::powerTopRow(
+    const std::vector<PowerTop>& powerTops,
     int attr,
     int unit
 ) const {
-    return &powers[(attr * UNIT_MAX + unit) * characterCount];
+    return &powerTops[(attr * UNIT_MAX + unit) * topCount];
 }
 
 
@@ -237,25 +276,32 @@ void BaseDeckRecommend::findBestCardsDFS(
         const auto& boundIndex = useCompatibleScoreBoundIndex
             ? dfsInfo.compatibleScoreBoundIndex
             : dfsInfo.scoreBoundIndex;
-        const auto& boundPowers = useCompatibleScoreBoundIndex
-            ? dfsInfo.compatibleScoreBoundPowers
-            : dfsInfo.scoreBoundPowerScratch;
+        const auto& boundPowerTops = useCompatibleScoreBoundIndex
+            ? dfsInfo.compatibleScoreBoundPowerTops
+            : dfsInfo.scoreBoundPowerTops;
+
+        // 候选表按值降序，取前 remaining 个未被占用的角色即为最大的 remaining 个可用值；
+        // 队内最多占 5 - remaining 个角色，所以 5 个候选一定够取满
+        const auto takeAvailable = [&deckCharacters](
+            const DfsScoreBoundIndex::ValueTop* tops, int count, double* out
+        ) {
+            int taken = 0;
+            for (int i = 0; i < DfsScoreBoundIndex::topCount && taken < count; ++i) {
+                if (tops[i].value <= 0.0)
+                    break;
+                if (deckCharacters.test(tops[i].character))
+                    continue;
+                out[taken++] = tops[i].value;
+            }
+            return taken;
+        };
 
         if (useSingleCardBound) [[unlikely]] {
             double availableSkillBound = 0.0;
             double availableBonusBound = 0.0;
-            for (int character = 0; character < DfsScoreBoundIndex::characterCount; ++character) {
-                if (deckCharacters.test(character))
-                    continue;
-                availableSkillBound = std::max(
-                    availableSkillBound, boundIndex.skills[character]
-                );
-                availableBonusBound = std::max(
-                    availableBonusBound, boundIndex.bonuses[character]
-                );
-            }
-            if (availableSkillBound == 0.0)
+            if (takeAvailable(boundIndex.skillTops.data(), 1, &availableSkillBound) == 0)
                 return;
+            takeAvailable(boundIndex.bonusTops.data(), 1, &availableBonusBound);
 
             std::array<int, 2> attrs{};
             int attrCount = 1;
@@ -274,14 +320,17 @@ void BaseDeckRecommend::findBestCardsDFS(
                     for (const auto* card : deckCards)
                         power += std::max(card->powerTotals[0][state], card->powerTotals[1][state]);
 
-                    const int* row = boundIndex.powerRow(
-                        boundPowers, attrs[a], units[u]
+                    const auto* tops = boundIndex.powerTopRow(
+                        boundPowerTops, attrs[a], units[u]
                     );
                     int candidatePower = 0;
-                    for (int character = 0; character < DfsScoreBoundIndex::characterCount; ++character) {
-                        if (deckCharacters.test(character))
+                    for (int i = 0; i < DfsScoreBoundIndex::topCount; ++i) {
+                        if (tops[i].value <= 0)
+                            break;
+                        if (deckCharacters.test(tops[i].character))
                             continue;
-                        candidatePower = std::max(candidatePower, row[character]);
+                        candidatePower = tops[i].value;
+                        break;
                     }
                     if (candidatePower > 0)
                         maxPower = std::max(maxPower, power + candidatePower);
@@ -321,7 +370,6 @@ void BaseDeckRecommend::findBestCardsDFS(
             for (; possibleUnits; possibleUnits &= possibleUnits - 1)
                 units[unitCount++] = std::countr_zero(possibleUnits);
 
-            std::array<int, 32> availablePowers;
             for (int a = 0; a < attrCount; ++a) {
                 for (int u = 0; u < unitCount; ++u) {
                     const int state = (u > 0 ? 2 : 0) + (a > 0 ? 1 : 0);
@@ -338,41 +386,33 @@ void BaseDeckRecommend::findBestCardsDFS(
                     if (!deckCompatible)
                         continue;
 
-                    const int* row = boundIndex.powerRow(
-                        boundPowers, attrs[a], units[u]
+                    const auto* tops = boundIndex.powerTopRow(
+                        boundPowerTops, attrs[a], units[u]
                     );
-                    int availableCount = 0;
-                    for (int character = 0; character < DfsScoreBoundIndex::characterCount; ++character) {
-                        if (!deckCharacters.test(character) && row[character] > 0)
-                            availablePowers[availableCount++] = row[character];
+                    int taken = 0;
+                    int candidatePower = power;
+                    for (int i = 0; i < DfsScoreBoundIndex::topCount && taken < remaining; ++i) {
+                        if (tops[i].value <= 0)
+                            break;
+                        if (deckCharacters.test(tops[i].character))
+                            continue;
+                        candidatePower += tops[i].value;
+                        ++taken;
                     }
-                    if (availableCount < remaining)
+                    if (taken < remaining)
                         continue;
-                    std::partial_sort(
-                        availablePowers.begin(), availablePowers.begin() + remaining,
-                        availablePowers.begin() + availableCount, std::greater<>()
-                    );
-                    maxPower = std::max(maxPower, std::accumulate(
-                        availablePowers.begin(), availablePowers.begin() + remaining, power
-                    ));
+                    maxPower = std::max(maxPower, candidatePower);
                 }
             }
             if (maxPower == 0)
                 return;
 
-            std::array<double, 32> availableSkillBounds;
-            int availableSkillCount = 0;
-            for (int character = 0; character < DfsScoreBoundIndex::characterCount; ++character) {
-                if (!deckCharacters.test(character) && boundIndex.skills[character] > 0.0)
-                    availableSkillBounds[availableSkillCount++] = boundIndex.skills[character];
-            }
-            if (availableSkillCount < remaining) {
+            std::array<double, DfsScoreBoundIndex::topCount> availableSkillBounds;
+            if (takeAvailable(
+                    boundIndex.skillTops.data(), remaining, availableSkillBounds.data()
+                ) < remaining) {
                 return;
             }
-            std::partial_sort(
-                availableSkillBounds.begin(), availableSkillBounds.begin() + remaining,
-                availableSkillBounds.begin() + availableSkillCount, std::greater<>()
-            );
 
             for (const auto* card : deckCards)
                 skillBounds[skillBoundCount++] = static_cast<double>(card->skill.max) + 1.0;
@@ -387,17 +427,10 @@ void BaseDeckRecommend::findBestCardsDFS(
                 bonusBound = dfsInfo.scoreBound.diffAttrBonus;
                 for (const auto* card : deckCards)
                     bonusBound += card->maxEventBonus.value_or(0.0);
-                std::array<double, 32> availableBonuses;
-                int availableBonusCount = 0;
-                for (int character = 0; character < DfsScoreBoundIndex::characterCount; ++character) {
-                    if (!deckCharacters.test(character) && boundIndex.bonuses[character] > 0.0)
-                        availableBonuses[availableBonusCount++] = boundIndex.bonuses[character];
-                }
                 // 加成为 0 的角色同样可选，取不满 remaining 个时余下按 0 计
-                const int usedBonusCount = std::min(remaining, availableBonusCount);
-                std::partial_sort(
-                    availableBonuses.begin(), availableBonuses.begin() + usedBonusCount,
-                    availableBonuses.begin() + availableBonusCount, std::greater<>()
+                std::array<double, DfsScoreBoundIndex::topCount> availableBonuses;
+                const int usedBonusCount = takeAvailable(
+                    boundIndex.bonusTops.data(), remaining, availableBonuses.data()
                 );
                 bonusBound += std::accumulate(
                     availableBonuses.begin(), availableBonuses.begin() + usedBonusCount, 0.0
@@ -552,7 +585,8 @@ void BaseDeckRecommend::findBestCardsDFS(
             nextCards = &compatibleCards;
             if (dfsInfo.scoreBound.enabled) {
                 dfsInfo.compatibleScoreBoundIndex.build(
-                    compatibleCards, dfsInfo.compatibleScoreBoundPowers
+                    compatibleCards, dfsInfo.compatibleScoreBoundPowers,
+                    dfsInfo.compatibleScoreBoundPowerTops
                 );
                 nextUsesCompatibleScoreBoundIndex = true;
             }
