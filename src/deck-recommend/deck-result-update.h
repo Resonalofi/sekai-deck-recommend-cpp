@@ -91,6 +91,45 @@ struct ScoreUpperBoundInfo {
 };
 
 
+// 第五张卡候选在分数上界里的三个分量。上界对综合力、技能与活动加成都单调，
+// 所以逐分量都不超过某个已确认落后候选的候选，必然同样落后。
+struct FifthCardBoundComponents {
+    int maxPower = 0;
+    double skillBound = 0.0;
+    double bonusBound = 0.0;
+
+    bool notBetterThan(const FifthCardBoundComponents& other) const {
+        return maxPower <= other.maxPower
+            && skillBound <= other.skillBound
+            && bonusBound <= other.bonusBound;
+    }
+};
+
+
+// 已确认落后的第五张卡候选分量。只在"已选四张、正在枚举第五张"的节点内有效，
+// 而这种节点不会嵌套（推入第五张后立即是完整卡组），所以整次搜索共用一份缓冲。
+// entries 不做初始化：count 之外的槽位一律不读。
+struct FifthCardFailedComponents {
+    static constexpr int capacity = 8;
+
+    std::array<FifthCardBoundComponents, capacity> entries;
+    int count = 0;
+
+    bool covers(const FifthCardBoundComponents& candidate) const {
+        const int size = count < capacity ? count : capacity;
+        for (int i = 0; i < size; ++i)
+            if (candidate.notBetterThan(entries[i]))
+                return true;
+        return false;
+    }
+
+    void add(const FifthCardBoundComponents& failed) {
+        entries[count % capacity] = failed;
+        ++count;
+    }
+};
+
+
 // DFS 分数上界的卡池索引；综合力表的存储由 RecommendCalcInfo 的复用缓冲提供，
 // 避免把大数组插入递归热字段之间。
 struct DfsScoreBoundIndex {
@@ -167,6 +206,8 @@ struct RecommendCalcInfo {
     // 每个 (属性,组合) 组的角色综合力候选；与上面两份综合力表一一对应
     std::vector<DfsScoreBoundIndex::PowerTop> scoreBoundPowerTops{};
     std::vector<DfsScoreBoundIndex::PowerTop> compatibleScoreBoundPowerTops{};
+    // 第五张卡上界的落后分量缓冲；放在末尾，不占用递归热字段的偏移
+    FifthCardFailedComponents fifthCardFailedComponents{};
 
     // 添加一个新结果
     void update(const RecommendDeck &deck, int limit);
