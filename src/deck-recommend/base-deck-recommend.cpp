@@ -5,6 +5,67 @@
 #include <chrono>
 #include <random>
 #include <thread>
+#include <functional>
+#if defined(__unix__) || defined(__APPLE__)
+#include <pthread.h>
+#endif
+
+namespace {
+
+// DFS 并行工作线程的栈大小。递归深度上界 member+1=6 层，大对象都在
+// RecommendCalcInfo 里而不在栈帧上，实测 64KB 即可跑对，这里留 8 倍余量。
+// 默认 8MB 的线程栈会让 VmData 涨约 28%（纯地址空间保留，RSS 只涨 0.07%）。
+constexpr std::size_t kDfsWorkerStackBytes = 512u * 1024u;
+
+#if defined(__unix__) || defined(__APPLE__)
+// std::thread 无法指定栈大小，POSIX 下用 pthread 手工建线程。
+class SmallStackThread {
+    pthread_t handle_{};
+    bool joinable_ = false;
+    std::function<void()> body_{};
+
+    static void* trampoline(void* raw) {
+        auto* self = static_cast<SmallStackThread*>(raw);
+        self->body_();
+        return nullptr;
+    }
+
+public:
+    explicit SmallStackThread(std::function<void()> body) : body_(std::move(body)) {
+        pthread_attr_t attr{};
+        if (pthread_attr_init(&attr) != 0)
+            throw std::runtime_error("pthread_attr_init failed");
+        pthread_attr_setstacksize(&attr, kDfsWorkerStackBytes);
+        const int rc = pthread_create(&handle_, &attr, &trampoline, this);
+        pthread_attr_destroy(&attr);
+        if (rc != 0)
+            throw std::runtime_error("pthread_create failed");
+        joinable_ = true;
+    }
+    SmallStackThread(const SmallStackThread&) = delete;
+    SmallStackThread& operator=(const SmallStackThread&) = delete;
+    void join() {
+        if (joinable_) {
+            pthread_join(handle_, nullptr);
+            joinable_ = false;
+        }
+    }
+    ~SmallStackThread() { join(); }
+};
+#else
+// 其余平台（含 Windows MSVC）退回 std::thread：行为不变，只是不省 VmData
+class SmallStackThread {
+    std::thread thread_;
+public:
+    explicit SmallStackThread(std::function<void()> body) : thread_(std::move(body)) {}
+    SmallStackThread(const SmallStackThread&) = delete;
+    SmallStackThread& operator=(const SmallStackThread&) = delete;
+    void join() { if (thread_.joinable()) thread_.join(); }
+};
+#endif
+
+}  // namespace
+
 
 
 namespace {
@@ -100,13 +161,101 @@ void BaseDeckRecommend::runRecommendAlgorithm(
             info.deckCharacters.flip(card.characterId);
         }
 
-        findBestCardsDFS(
-            liveType, config, dfsCards, supportCards, scoreFunc,
-            info,
-            config.limit, isChallengeLive, config.member, honorBonus,
-            eventConfig.eventType, eventConfig.eventId, fixedCards,
-            eventConfig.eventType != Enums::EventType::world_bloom || eventConfig.eventUnit != 0
-        );
+        const bool wlPrune =
+            eventConfig.eventType != Enums::EventType::world_bloom || eventConfig.eventUnit != 0;
+        // 分区并行会改变顶层遍历顺序，只在「卡组得分与卡内次序无关」时才成立。
+        // 三个条件缺一不可：
+        //   1. Score 目标——Power/Skill/Mysekai 在 559~576 行用 preCard 做
+        //      「肯定弱于上一张已访问卡就跳过」的有损启发式剪枝，结果本身
+        //      依赖顶层遍历顺序，分区会改变它们的（近似）结果。
+        //   2. 多人——getLiveScoreByDeck 的多人 5 卡快路径把得分算成
+        //      skillScoreUps[0] + Σ skillScoreUps[1..4]/5，对位置 1~4 对称，
+        //      只依赖谁在位置 0（由最强技能确定性选出）。solo/auto 走通用
+        //      路径，那里 skills[cardCount] = skillScoreUps[0] 的环绕元素、
+        //      以及 specific 策略的置换都让得分对卡内次序敏感。
+        //   3. member == 5——只有满 5 卡才进那条对称快路径；cardCount < 5 会
+        //      落到通用路径并触发补零搬移，同样变成次序敏感。
+        // 实测依据：auto 与 multi member=4 的用例在仅分区（无共享下界）下即可
+        // 复现差异，且同一套卡在不同 limit 下算出不同 liveScore——该性质在
+        // 0d9c352（本轮改动之前）就已存在，不是并行引入的。
+        const bool orderIndependentScore =
+            config.target == RecommendTarget::Score
+            && Enums::LiveType::isMulti(liveType)
+            && config.member == 5;
+        const int dfsThreads = orderIndependentScore
+            ? std::max(1, config.dfsParallelThreads)
+            : 1;
+        if (dfsThreads <= 1) {
+            findBestCardsDFS(
+                liveType, config, dfsCards, supportCards, scoreFunc,
+                info,
+                config.limit, isChallengeLive, config.member, honorBonus,
+                eventConfig.eventType, eventConfig.eventId, fixedCards,
+                wlPrune
+            );
+            return;
+        }
+
+        // 顶层按第一张卡分区并行；每线程一份引擎/支援卡组/计算信息，
+        // join 后按固定线程下标依次 merge，与双算法并行路径同构
+        std::vector<BaseDeckRecommend> dfsEngines(dfsThreads, *this);
+        std::vector<SupportDeckMap> dfsSupportCards(dfsThreads, supportCards);
+        std::vector<RecommendCalcInfo> dfsInfos(dfsThreads, info);
+        std::vector<std::exception_ptr> dfsErrors(dfsThreads);
+        // 跨线程共享剪枝下界：已装满线程的局部第 N 名取最大值
+        std::atomic<double> sharedTargetFloor{-std::numeric_limits<double>::infinity()};
+        std::atomic<int> sharedPowerFloor{std::numeric_limits<int>::min()};
+        for (auto& dfsInfoSlot : dfsInfos) {
+            dfsInfoSlot.sharedTargetFloor = &sharedTargetFloor;
+            dfsInfoSlot.sharedPowerFloor = &sharedPowerFloor;
+        }
+        std::vector<std::unique_ptr<SmallStackThread>> dfsThreadPool{};
+        dfsThreadPool.reserve(dfsThreads - 1);
+        auto runPartition = [&](int slot) {
+            try {
+                dfsEngines[slot].findBestCardsDFS(
+                    liveType, config, dfsCards, dfsSupportCards[slot], scoreFunc,
+                    dfsInfos[slot],
+                    config.limit, isChallengeLive, config.member, honorBonus,
+                    eventConfig.eventType, eventConfig.eventId, fixedCards,
+                    wlPrune, false, dfsThreads, slot
+                );
+            }
+            catch (...) {
+                dfsErrors[slot] = std::current_exception();
+            }
+        };
+        // pthread_create 会因线程数上限或内存压力失败。改动前的实现从不建
+        // 线程、永远能返回结果，所以这里不能把「慢一点」变成「请求失败」：
+        // 建不出来的分区改由调用线程自己跑完。各分区互不依赖、合并按分支序，
+        // 所以谁执行哪个分区不影响结果，只影响调度。
+        int dfsSpawned = 0;
+        for (int slot = 1; slot < dfsThreads; ++slot) {
+            try {
+                dfsThreadPool.push_back(std::make_unique<SmallStackThread>(
+                    [&runPartition, slot] { runPartition(slot); }
+                ));
+                ++dfsSpawned;
+            }
+            catch (const std::runtime_error&) {
+                // 建线程失败（POSIX 抛 runtime_error，std::thread 抛
+                // system_error，后者也派生自 runtime_error）。剩余分区一并
+                // 留给调用线程，不再尝试。
+                break;
+            }
+        }
+        runPartition(0);
+        for (int slot = 1 + dfsSpawned; slot < dfsThreads; ++slot)
+            runPartition(slot);
+        for (auto& thread : dfsThreadPool)
+            thread->join();
+        for (const auto& error : dfsErrors)
+            if (error) std::rethrow_exception(error);
+        for (auto& dfsInfoSlot : dfsInfos) {
+            dfsInfoSlot.sharedTargetFloor = nullptr;
+            dfsInfoSlot.sharedPowerFloor = nullptr;
+        }
+        info.mergeByBranchOrder(dfsInfos, config.limit);
         return;
     }
 

@@ -113,7 +113,7 @@ bool cannotBeatFifthCardScoreBound(
     );
     const auto score = scoreFunc(upperBound);
     const double targetValue = score.score + double(score.liveScore) / SCORE_MAX;
-    return targetValue < dfsInfo.deckQueue.top().targetValue;
+    return targetValue < dfsInfo.effectiveTargetFloor();
 }
 
 }  // namespace
@@ -213,7 +213,9 @@ void BaseDeckRecommend::findBestCardsDFS(
     std::optional<int> eventId,
     const std::vector<CardDetail>& fixedCards,
     bool applySameUnitOrAttrPrune,
-    bool useCompatibleScoreBoundIndex
+    bool useCompatibleScoreBoundIndex,
+    int topLevelStride,
+    int topLevelOffset
 )
 {
     // 超时
@@ -223,6 +225,9 @@ void BaseDeckRecommend::findBestCardsDFS(
 
     auto& deckCards = dfsInfo.deckCards;
     auto& deckCharacters = dfsInfo.deckCharacters;
+    // 剪枝下界要判「队列已满」，必须把本轮的 limit 交给 dfsInfo；
+    // 递归每层重复赋同一值无副作用
+    dfsInfo.queueLimit = limit;
 
     // 防止挑战Live卡的数量小于允许上场的数量导致无法组队
     if (isChallengeLive) {
@@ -230,12 +235,12 @@ void BaseDeckRecommend::findBestCardsDFS(
     }
     // 已经是完整卡组，计算当前卡组的值
     if (int(deckCards.size()) == member) {
-        if (cfg.target == RecommendTarget::Power && int(dfsInfo.deckQueue.size()) >= limit) {
+        if (cfg.target == RecommendTarget::Power && dfsInfo.hasUsablePowerFloor(limit)) {
             const bool useMixedUnitPower = member != 5 || dfsInfo.deckCommonUnitMask == 0;
             const auto power = useMixedUnitPower
                 ? honorBonus + dfsInfo.deckMixedUnitPowerTotals[member == 5 && dfsInfo.deckAllSameAttr]
                 : this->deckCalculator.getDeckTotalPowerByCards(deckCards, honorBonus);
-            if (power < dfsInfo.deckQueue.top().power.total) {
+            if (power < dfsInfo.effectivePowerFloor()) {
                 return;
             }
         }
@@ -252,7 +257,7 @@ void BaseDeckRecommend::findBestCardsDFS(
         return;
     }
 
-    if (cfg.target == RecommendTarget::Power && int(dfsInfo.deckQueue.size()) >= limit) {
+    if (cfg.target == RecommendTarget::Power && dfsInfo.hasUsablePowerFloor(limit)) {
         int remaining = member - static_cast<int>(deckCards.size());
         int maxPower = honorBonus;
         for (const auto* card : deckCards)
@@ -277,14 +282,14 @@ void BaseDeckRecommend::findBestCardsDFS(
             availableCharacters.set(card->characterId);
             --remaining;
         }
-        if (remaining > 0 || maxPower < dfsInfo.deckQueue.top().power.total) {
+        if (remaining > 0 || maxPower < dfsInfo.effectivePowerFloor()) {
             return;
         }
     }
 
     // 分数对综合力、技能和活动加成单调；分别取严格上界后仍落后才可整枝。
     // 适用条件与与节点无关的加成上界由调用方一次算好，见 recommendHighScoreDeck。
-    if (dfsInfo.scoreBound.enabled && int(dfsInfo.deckQueue.size()) >= limit) {
+    if (dfsInfo.scoreBound.enabled && dfsInfo.hasUsableTargetFloor(limit)) {
         const int remaining = member - static_cast<int>(deckCards.size());
 
         // 最后一张卡时，按角色聚合和 partial_sort 都退化为取一个最大值。
@@ -486,7 +491,7 @@ void BaseDeckRecommend::findBestCardsDFS(
         );
         const auto score = scoreFunc(upperBound);
         const double targetValue = score.score + double(score.liveScore) / SCORE_MAX;
-        if (targetValue < dfsInfo.deckQueue.top().targetValue) {
+        if (targetValue < dfsInfo.effectiveTargetFloor()) {
             return;
         }
     }
@@ -519,7 +524,17 @@ void BaseDeckRecommend::findBestCardsDFS(
         dfsInfo.fifthCardFailedComponents.count = 0;
     // 兼容候选列表只会在深度 cIndex+1 构建一次，供整棵子树只读使用，可安全复用缓冲
     std::vector<const CardDetail*>& compatibleCards = dfsInfo.compatibleScratch;
+    // 顶层分区只在最外层生效；递归调用的 stride 恒为 1
+    const bool partitionTopLevel = topLevelStride > 1;
+    int topLevelSeen = -1;
     for (const auto* card : cardDetails) {
+        if (partitionTopLevel) {
+            ++topLevelSeen;
+            if (topLevelSeen % topLevelStride != topLevelOffset)
+                continue;
+            // 记下本分支下标，供并行合并复现串行的并列取舍次序
+            dfsInfo.currentTopLevelBranch = topLevelSeen;
+        }
         if (isChallengeLive) {
             bool selected = std::any_of(deckCards.begin(), deckCards.end(), [&](const auto* deckCard) {
                 return deckCard->cardId == card->cardId;
@@ -578,7 +593,7 @@ void BaseDeckRecommend::findBestCardsDFS(
         // 第五张卡已经固定后，用逐分量严格上界提前拒绝必败候选。
         // 逐分量都不超过本节点某个已落后候选时直接跳过，不必再算一遍上界分数；
         // 否则调用原评分函数作 oracle，最终入队仍走完整卡组状态枚举。
-        if (useFifthCardScoreBound && int(dfsInfo.deckQueue.size()) >= limit) {
+        if (useFifthCardScoreBound && dfsInfo.hasUsableTargetFloor(limit)) {
             const auto components = fifthCardBoundComponents(
                 card, honorBonus, dfsInfo, fifthCardScoreBoundPrefix
             );

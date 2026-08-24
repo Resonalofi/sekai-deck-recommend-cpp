@@ -111,6 +111,8 @@ struct DeckRecommendConfig {
     int gaPopSize = 10000; // 种群大小
     int gaParentSize = 1000; // 父代数量
     int gaEliteSize = 0; // 精英数量
+    // DFS 顶层并行线程数；1 表示串行，与原实现逐位一致
+    int dfsParallelThreads = 2;
     double gaCrossoverRate = 1.0; // 交叉率
     double gaBaseMutationRate = 0.1; // 基础变异率
     double gaNoImproveIterToMutationRate = 0.02; // 无改进迭代次数转换为变异率的比例
@@ -196,7 +198,10 @@ public:
         std::optional<int> eventId = std::nullopt,
         const std::vector<CardDetail>& fixedCards = {},
         bool applySameUnitOrAttrPrune = true,
-        bool useCompatibleScoreBoundIndex = false
+        bool useCompatibleScoreBoundIndex = false,
+        // 顶层第一张卡的分区：只在最外层生效，递归调用一律传默认值
+        int topLevelStride = 1,
+        int topLevelOffset = 0
     );
 
     /**

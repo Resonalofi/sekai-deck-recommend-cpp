@@ -35,10 +35,36 @@ void RecommendCalcInfo::update(const RecommendDeck &deck, int limit)
     }
     deckQueueHashSet.insert(hash);
     deckSourceMasks[hash] = currentAlgorithmMask;
+    if (currentTopLevelBranch >= 0)
+        deckBranchOrigin[hash] = {currentTopLevelBranch, updateSequence++};
 
     deckQueue.push(deck);
     while (int(deckQueue.size()) > limit) {
         deckQueue.pop();
+    }
+    // 队列装满后把局部第 N 名发布给同批线程；只单调升
+    if (int(deckQueue.size()) >= limit)
+        publishSharedFloor();
+}
+
+void RecommendCalcInfo::publishSharedFloor()
+{
+    if (deckQueue.empty()) return;
+    const auto& worst = deckQueue.top();
+    if (sharedTargetFloor) {
+        double seen = sharedTargetFloor->load(std::memory_order_relaxed);
+        while (worst.targetValue > seen &&
+               !sharedTargetFloor->compare_exchange_weak(
+                   seen, worst.targetValue, std::memory_order_relaxed)) {
+        }
+    }
+    if (sharedPowerFloor) {
+        const int power = worst.power.total;
+        int seen = sharedPowerFloor->load(std::memory_order_relaxed);
+        while (power > seen &&
+               !sharedPowerFloor->compare_exchange_weak(
+                   seen, power, std::memory_order_relaxed)) {
+        }
     }
 }
 
@@ -54,6 +80,58 @@ void RecommendCalcInfo::merge(const RecommendCalcInfo &other, int limit)
     }
     currentAlgorithmMask = savedMask;
     is_timeout |= other.is_timeout;
+}
+
+void RecommendCalcInfo::mergeByBranchOrder(
+    const std::vector<RecommendCalcInfo>& others, int limit
+) {
+    // 把各线程的卡组按 (顶层分支下标, 线程内序号) 排序后依次入队，
+    // 复现串行的访问次序，从而让并列候选的取舍与串行一致。
+    struct Entry {
+        int branch;
+        uint32_t seq;
+        const RecommendDeck* deck;
+        uint32_t mask;
+        bool operator<(const Entry& o) const {
+            if (branch != o.branch) return branch < o.branch;
+            return seq < o.seq;
+        }
+    };
+    std::vector<RecommendDeck> owned{};
+    std::vector<Entry> entries{};
+    for (const auto& other : others) {
+        auto queue = other.deckQueue;
+        while (queue.size()) {
+            owned.push_back(queue.top());
+            queue.pop();
+        }
+    }
+    entries.reserve(owned.size());
+    std::size_t at = 0;
+    for (const auto& other : others) {
+        auto queue = other.deckQueue;
+        while (queue.size()) {
+            const auto& deck = owned[at++];
+            const uint64_t hash = getRecommendDeckHash(deck);
+            const auto it = other.deckBranchOrigin.find(hash);
+            entries.push_back(Entry{
+                it != other.deckBranchOrigin.end() ? it->second.first : 0,
+                it != other.deckBranchOrigin.end() ? it->second.second : 0,
+                &deck,
+                other.sourceMaskOf(deck),
+            });
+            queue.pop();
+        }
+    }
+    std::sort(entries.begin(), entries.end());
+    const uint32_t savedMask = currentAlgorithmMask;
+    for (const auto& entry : entries) {
+        currentAlgorithmMask = entry.mask;
+        update(*entry.deck, limit);
+    }
+    currentAlgorithmMask = savedMask;
+    for (const auto& other : others)
+        is_timeout |= other.is_timeout;
 }
 
 uint32_t RecommendCalcInfo::sourceMaskOf(const RecommendDeck &deck) const

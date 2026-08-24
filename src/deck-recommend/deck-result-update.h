@@ -6,6 +6,7 @@
 #include <array>
 #include <set>
 #include <queue>
+#include <atomic>
 #include <bitset>
 
 enum class RecommendTarget {
@@ -217,6 +218,10 @@ struct RecommendCalcInfo {
     // 合并另一份计算结果（用于并行运行多个算法后汇总）
     void merge(const RecommendCalcInfo &other, int limit);
 
+    // 并行 DFS 专用：按 (顶层分支下标, 线程内序号) 排序后合并，
+    // 使并列候选的取舍与串行一致，且与线程完成顺序无关
+    void mergeByBranchOrder(const std::vector<RecommendCalcInfo>& others, int limit);
+
     // 取出结果时查询某一队由哪些算法找出
     uint32_t sourceMaskOf(const RecommendDeck &deck) const;
 
@@ -225,6 +230,61 @@ struct RecommendCalcInfo {
 
     // 检查是否超时
     bool isTimeout();
+
+    // 当前正在搜索的顶层分支下标；并行合并时用它复现串行的并列取舍次序。
+    // -1 表示串行路径，此时不记录来源。
+    int currentTopLevelBranch = -1;
+    // 入队顺序计数器，用于同分支内的稳定排序
+    uint32_t updateSequence = 0;
+    // hash -> (分支下标, 线程内序号)
+    std::unordered_map<uint64_t, std::pair<int, uint32_t>> deckBranchOrigin = {};
+
+    // DFS 顶层并行时指向同批线程共享的剪枝下界；串行为 nullptr。
+    // 论证：若本线程队列已满且局部第 N 名为 V，则全局至少 N 队 >= V，
+    // 故全局第 N 名 >= V，上界 < V 的卡组不可能进入最终结果。
+    std::atomic<double>* sharedTargetFloor = nullptr;
+    std::atomic<int>* sharedPowerFloor = nullptr;
+
+    // 把局部第 N 名发布到共享下界（只单调升）
+    void publishSharedFloor();
+
+    // 剪枝门卫：本地队列已满，或同批别的线程已发布可用下界。
+    // 后者让队列还空的线程也能立刻享受剪枝——这正是共享下界的意义。
+    bool hasUsableTargetFloor(int limit) const {
+        if (int(deckQueue.size()) >= limit) return true;
+        return sharedTargetFloor &&
+            sharedTargetFloor->load(std::memory_order_relaxed) >
+                -std::numeric_limits<double>::infinity();
+    }
+    bool hasUsablePowerFloor(int limit) const {
+        if (int(deckQueue.size()) >= limit) return true;
+        return sharedPowerFloor &&
+            sharedPowerFloor->load(std::memory_order_relaxed) >
+                std::numeric_limits<int>::min();
+    }
+
+    // 本轮搜索的结果条数上限，供剪枝下界判断队列是否已满。
+    // 必须是「已满」而不是「非空」：队列只有 3 队（limit=10）时 top() 是
+    // 这 3 队里最差的一个，远高于最终第 N 名，拿它当下界会过度剪枝。
+    int queueLimit = 0;
+
+    // 剪枝用的实际下界。
+    // 本地分量只有在队列已装满 limit 队时才可信——此时 top() 就是局部第 N 名；
+    // 未满时取负无穷，只依赖共享下界（它来自别的线程已装满的队列）。
+    double effectiveTargetFloor() const {
+        const double local = queueLimit > 0 && int(deckQueue.size()) >= queueLimit
+            ? deckQueue.top().targetValue
+            : -std::numeric_limits<double>::infinity();
+        if (!sharedTargetFloor) return local;
+        return std::max(local, sharedTargetFloor->load(std::memory_order_relaxed));
+    }
+    int effectivePowerFloor() const {
+        const int local = queueLimit > 0 && int(deckQueue.size()) >= queueLimit
+            ? deckQueue.top().power.total
+            : std::numeric_limits<int>::min();
+        if (!sharedPowerFloor) return local;
+        return std::max(local, sharedPowerFloor->load(std::memory_order_relaxed));
+    }
 };
 
 
