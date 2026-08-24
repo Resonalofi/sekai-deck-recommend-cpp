@@ -27,8 +27,12 @@ if (EMSCRIPTEN)
         -Wuninitialized
         -fexceptions
         -flto
+        -pthread
     )
     target_link_options(sekai_deck_recommend_wasm PRIVATE
+        -pthread
+        "-sPTHREAD_POOL_SIZE=4"
+
         --bind
         -fexceptions
         -flto
@@ -54,6 +58,9 @@ if (EMSCRIPTEN)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "$<TARGET_FILE_DIR:sekai_deck_recommend_wasm>/sekai_deck_recommend_wasm.data"
                 "${SEKAI_DECK_RECOMMEND_WASM_OUTPUT_DIR}/sekai_deck_recommend_wasm.data"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE_DIR:sekai_deck_recommend_wasm>/sekai_deck_recommend_wasm.worker.js"
+                "${SEKAI_DECK_RECOMMEND_WASM_OUTPUT_DIR}/sekai_deck_recommend_wasm.worker.js"
         )
     endif()
 else()
