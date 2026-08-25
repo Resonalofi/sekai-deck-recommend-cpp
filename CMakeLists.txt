@@ -27,12 +27,8 @@ if (EMSCRIPTEN)
         -Wuninitialized
         -fexceptions
         -flto
-        -pthread
     )
     target_link_options(sekai_deck_recommend_wasm PRIVATE
-        -pthread
-        "-sPTHREAD_POOL_SIZE=4"
-
         --bind
         -fexceptions
         -flto
