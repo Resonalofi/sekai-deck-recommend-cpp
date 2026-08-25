@@ -16,6 +16,11 @@ uint64_t getRecommendDeckHash(const RecommendDeck &deck)
     uint64_t hash = 0;
     constexpr uint64_t base = 10007;
     hash = hash * base + deck.score;
+    // liveScore 必须入键：排序键是 score + liveScore/SCORE_MAX，同一套卡的两个
+    // 状态完全可能 score/综合/C位 全同而 liveScore 不同，那是真正不同的结果
+    // （优劣由 liveScore 决出）。漏掉它会让 wouldUpdate 把更优的那个当成重复
+    // 直接拒掉，且拒掉哪些取决于 limit，表现为放大 limit 反而更差。
+    hash = hash * base + deck.liveScore;
     hash = hash * base + deck.power.total;
     hash = hash * base + deck.cards[0].cardId;
     return hash;
@@ -153,6 +158,8 @@ bool RecommendCalcInfo::wouldUpdate(const RecommendCandidate& candidate, int lim
     uint64_t hash = 0;
     constexpr uint64_t base = 10007;
     hash = hash * base + candidate.resultScore;
+    // 与 getRecommendDeckHash 同键；两侧键不一致会让去重整体失效，必须同步改
+    hash = hash * base + candidate.score.liveScore;
     hash = hash * base + candidate.power;
     hash = hash * base + candidate.leaderCardId;
     if (!deckQueueHashSet.count(hash))
