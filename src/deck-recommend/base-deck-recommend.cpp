@@ -182,9 +182,13 @@ void BaseDeckRecommend::runRecommendAlgorithm(
             config.target == RecommendTarget::Score
             && Enums::LiveType::isMulti(liveType)
             && config.member == 5;
-        const int dfsThreads = orderIndependentScore
-            ? std::max(1, config.dfsParallelThreads)
-            : 1;
+#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+        // 单线程 WASM 构建没有线程支持，分区并行退化为串行
+        const int configuredDfsThreads = 1;
+#else
+        const int configuredDfsThreads = std::max(1, config.dfsParallelThreads);
+#endif
+        const int dfsThreads = orderIndependentScore ? configuredDfsThreads : 1;
         if (dfsThreads <= 1) {
             findBestCardsDFS(
                 liveType, config, dfsCards, supportCards, scoreFunc,
