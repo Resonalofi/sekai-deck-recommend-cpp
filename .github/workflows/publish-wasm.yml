@@ -66,7 +66,26 @@ jobs:
           : "${R2_ENDPOINT:?R2_ENDPOINT secret is required}"
           : "${R2_BUCKET_NAME:?R2_BUCKET_NAME secret is required}"
 
-          aws s3 sync dist/wasm/ "s3://${R2_BUCKET_NAME}/wasm/" \
-            --endpoint-url "${R2_ENDPOINT}" \
-            --delete \
-            --only-show-errors
+          CACHE_CONTROL="public, max-age=0, s-maxage=86400, must-revalidate"
+
+          put() {
+            aws s3 cp "dist/wasm/$1" "s3://${R2_BUCKET_NAME}/wasm/$1" \
+              --endpoint-url "${R2_ENDPOINT}" \
+              --cache-control "${CACHE_CONTROL}" \
+              --content-type "$2" \
+              --only-show-errors
+          }
+
+          put sekai_deck_recommend_wasm.wasm application/wasm
+          put sekai_deck_recommend_wasm.data application/octet-stream
+          put sekai_deck_recommend_wasm.js text/javascript
+
+      - name: Purge CDN caches
+        env:
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          EO_ZONE_ID: ${{ secrets.EO_ZONE_ID }}
+        run: node tools/purge-cdn.mjs
+
+      - name: Verify CDN serves this build
+        run: node tools/verify-cdn.mjs dist/wasm
