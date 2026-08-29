@@ -750,13 +750,225 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
         randomizedPool = cards;
         sortByStrength(randomizedPool);
     }
+    // 固定角色的混合搜索先用完整卡池结果确定 DFS 必须覆盖的卡，再直接跳到
+    // 包含这些卡的最小优先级池。全员固定时，其他角色不可能上场，可直接裁掉。
+    if (usesDfs && usesRandomized && !config.fixedCharacters.empty()) {
+        RecommendCalcInfo dfsInfo = calcInfo;
+        BaseDeckRecommend dfsEngine = *this;
+        SupportDeckMap dfsSupportCards = supportCards;
+        std::bitset<32> fixedCharacterMask{};
+        for (const auto characterId : config.fixedCharacters)
+            fixedCharacterMask.set(characterId);
+        const bool allMembersFixed =
+            fixedCharacterMask.count() == static_cast<size_t>(config.member);
+        std::vector<CardDetail> dfsCards{};
+        size_t dfsPreCardCount = 0;
+        bool dfsPoolExhausted = false;
+        long long dfsElapsedNs = 0;
+
+        const auto loadNextDfsPool = [&]() {
+            dfsCards = filterCardPriority(
+                liveType, eventConfig.eventType, cards,
+                dfsPreCardCount, config.member
+            );
+            const size_t filteredCardCount = dfsCards.size();
+            if (filteredCardCount == dfsPreCardCount) {
+                dfsPoolExhausted = true;
+                return false;
+            }
+            dfsPreCardCount = filteredCardCount;
+            return true;
+        };
+        const auto runLoadedDfsPool = [&]() {
+            sortByStrength(dfsCards);
+            dfsInfo.currentAlgorithmMask = recommendAlgorithmBit(RecommendAlgorithm::DFS);
+            const long long startNs = steadyNowNs();
+            dfsEngine.runRecommendAlgorithm(
+                RecommendAlgorithm::DFS, liveType, config, eventConfig, dfsCards,
+                dfsSupportCards, sf, dfsInfo, honorBonus, fixedCards
+            );
+            dfsElapsedNs += steadyNowNs() - startNs;
+        };
+
+        std::vector<size_t> randomizedAlgorithmIndexes{};
+        for (size_t i = 0; i < algorithms.size(); ++i)
+            if (algorithms[i] != RecommendAlgorithm::DFS)
+                randomizedAlgorithmIndexes.push_back(i);
+        std::vector<BaseDeckRecommend> randomizedEngines(
+            randomizedAlgorithmIndexes.size(), *this
+        );
+        std::vector<SupportDeckMap> randomizedSupportCards(
+            randomizedAlgorithmIndexes.size(), supportCards
+        );
+        std::vector<RecommendCalcInfo> randomizedInfos(
+            randomizedAlgorithmIndexes.size(), calcInfo
+        );
+        std::vector<long long> randomizedElapsedNs(randomizedAlgorithmIndexes.size(), 0);
+        std::vector<std::exception_ptr> randomizedErrors(randomizedAlgorithmIndexes.size());
+        const auto runRandomized = [&](size_t slot) {
+            const auto algorithm = algorithms[randomizedAlgorithmIndexes[slot]];
+            randomizedInfos[slot].currentAlgorithmMask = recommendAlgorithmBit(algorithm);
+            const long long startNs = steadyNowNs();
+            try {
+                randomizedEngines[slot].runRecommendAlgorithm(
+                    algorithm, liveType, config, eventConfig, randomizedPool,
+                    randomizedSupportCards[slot], sf, randomizedInfos[slot],
+                    honorBonus, fixedCards
+                );
+            }
+            catch (...) {
+                randomizedErrors[slot] = std::current_exception();
+            }
+            randomizedElapsedNs[slot] = steadyNowNs() - startNs;
+        };
+
+        if (runAlgorithmsInParallel && randomizedAlgorithmIndexes.size() > 1) {
+            std::vector<std::thread> threads{};
+            threads.reserve(randomizedAlgorithmIndexes.size());
+            for (size_t slot = 0; slot < randomizedAlgorithmIndexes.size(); ++slot)
+                threads.emplace_back([&runRandomized, slot] { runRandomized(slot); });
+            for (auto& thread : threads)
+                thread.join();
+        }
+        else {
+            for (size_t slot = 0; slot < randomizedAlgorithmIndexes.size(); ++slot)
+                runRandomized(slot);
+        }
+
+        for (const auto& error : randomizedErrors)
+            if (error) std::rethrow_exception(error);
+        for (size_t slot = 0; slot < randomizedAlgorithmIndexes.size(); ++slot) {
+            const auto algorithm = algorithms[randomizedAlgorithmIndexes[slot]];
+            result.algorithmNs[int(algorithm)] += randomizedElapsedNs[slot];
+            calcInfo.merge(randomizedInfos[slot], config.limit);
+        }
+
+        dfsInfo = calcInfo;
+        if (allMembersFixed) {
+            std::copy_if(
+                cards.begin(), cards.end(), std::back_inserter(dfsCards),
+                [&fixedCharacterMask](const CardDetail& card) {
+                    return fixedCharacterMask.test(card.characterId);
+                }
+            );
+            dfsPoolExhausted = true;
+            runLoadedDfsPool();
+            calcInfo.merge(dfsInfo, config.limit);
+        }
+        else if (!calcInfo.deckQueue.empty()) {
+            std::unordered_set<int> requiredCardIds{};
+            auto combinedQueue = calcInfo.deckQueue;
+            while (!combinedQueue.empty()) {
+                for (const auto& card : combinedQueue.top().cards)
+                    requiredCardIds.insert(card.cardId);
+                combinedQueue.pop();
+            }
+            while (!dfsPoolExhausted && loadNextDfsPool()) {
+                const bool containsRequiredCards = std::all_of(
+                    requiredCardIds.begin(), requiredCardIds.end(),
+                    [&dfsCards](int cardId) {
+                        return std::any_of(
+                            dfsCards.begin(), dfsCards.end(),
+                            [cardId](const CardDetail& card) {
+                                return card.cardId == cardId;
+                            }
+                        );
+                    }
+                );
+                if (containsRequiredCards) {
+                    runLoadedDfsPool();
+                    calcInfo.merge(dfsInfo, config.limit);
+                    break;
+                }
+            }
+        }
+        else {
+            while (!dfsInfo.is_timeout &&
+                   int(dfsInfo.deckQueue.size()) < config.limit &&
+                   loadNextDfsPool()) {
+                runLoadedDfsPool();
+            }
+            calcInfo.merge(dfsInfo, config.limit);
+        }
+
+        const auto dfsCoversCombinedResults = [&]() {
+            if (int(calcInfo.deckQueue.size()) < config.limit)
+                return false;
+            auto combinedQueue = calcInfo.deckQueue;
+            while (!combinedQueue.empty()) {
+                if (!(calcInfo.sourceMaskOf(combinedQueue.top()) &
+                      recommendAlgorithmBit(RecommendAlgorithm::DFS))) {
+                    return false;
+                }
+                combinedQueue.pop();
+            }
+            return true;
+        };
+        while (!dfsCoversCombinedResults() &&
+               !dfsInfo.is_timeout && !dfsPoolExhausted &&
+               loadNextDfsPool()) {
+            runLoadedDfsPool();
+            calcInfo.merge(dfsInfo, config.limit);
+        }
+        if (calcInfo.deckQueue.empty())
+            throw std::runtime_error(
+                "Cannot recommend any deck in " + std::to_string(cards.size()) + " cards"
+            );
+        result.algorithmNs[int(RecommendAlgorithm::DFS)] += dfsElapsedNs;
+
+        auto queue = calcInfo.deckQueue;
+        while (!queue.empty()) {
+            ans.emplace_back(queue.top());
+            ans.back().algorithmMask = calcInfo.sourceMaskOf(ans.back());
+            queue.pop();
+        }
+        std::reverse(ans.begin(), ans.end());
+        return result;
+    }
+    std::bitset<32> fixedCharacterMask{};
+    for (const auto characterId : config.fixedCharacters)
+        fixedCharacterMask.set(characterId);
+    const bool allMembersFixed =
+        fixedCharacterMask.count() == static_cast<size_t>(config.member);
+    std::ptrdiff_t fixedCharacterCardCount = 0;
+    if (fixedCharacterMask.any()) {
+        fixedCharacterCardCount = std::count_if(
+            cards.begin(), cards.end(), [&fixedCharacterMask](const CardDetail& card) {
+                return fixedCharacterMask.test(card.characterId);
+            }
+        );
+    }
 
     while (true) {
         size_t cardCount = cards.size();
+        bool fixedCharacterPoolComplete = true;
         if (usesDfs) {
             // DFS 为了优化性能，会根据活动加成和卡牌稀有度优先级筛选卡牌
-            cardDetails = filterCardPriority(liveType, eventConfig.eventType, cards, preCardCount, config.member);
+            if (allMembersFixed) {
+                cardDetails.clear();
+                std::copy_if(
+                    cards.begin(), cards.end(), std::back_inserter(cardDetails),
+                    [&fixedCharacterMask](const CardDetail& card) {
+                        return fixedCharacterMask.test(card.characterId);
+                    }
+                );
+            }
+            else {
+                cardDetails = filterCardPriority(
+                    liveType, eventConfig.eventType, cards, preCardCount, config.member
+                );
+            }
             cardCount = cardDetails.size();
+            if (fixedCharacterMask.any()) {
+                const auto includedFixedCharacterCards = std::count_if(
+                    cardDetails.begin(), cardDetails.end(),
+                    [&fixedCharacterMask](const CardDetail& card) {
+                        return fixedCharacterMask.test(card.characterId);
+                    }
+                );
+                fixedCharacterPoolComplete =
+                    includedFixedCharacterCards == fixedCharacterCardCount;
+            }
         }
         // 随机化算法不需要过滤，直接用全部卡牌排序后的 randomizedPool
         if (cardCount == preCardCount) {
@@ -833,8 +1045,10 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
             q.pop();
         }
         std::reverse(ans.begin(), ans.end());
-        if (int(ans.size()) >= config.limit || calcInfo.isTimeout())
+        if ((int(ans.size()) >= config.limit && fixedCharacterPoolComplete) ||
+            calcInfo.isTimeout()) {
             break;
+        }
     }
 
     return result;
