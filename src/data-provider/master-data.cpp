@@ -294,6 +294,7 @@ void addFinalChapterEventIfNeeded(MasterData& md) {
                 auto newEventCard = eventCard;
                 newEventCard.eventId = finalChapterEventId;
                 newEventCard.bonusRate = 25.0;
+                newEventCard.leaderBonusRate = 20.0;
                 newEventCards.push_back(newEventCard);
             }
         }
@@ -311,6 +312,69 @@ void addFinalChapterEventIfNeeded(MasterData& md) {
             newLimitedBonuses.begin(),
             newLimitedBonuses.end()
         );
+    }
+}
+
+void addFinalChapter2EventIfNeeded(MasterData& md) {
+    bool hasFinalChapter2 = false;
+    for (const auto& e : md.events) {
+        if (e.id == finalChapter2EventId) {
+            hasFinalChapter2 = true;
+            break;
+        }
+    }
+    if (!hasFinalChapter2) {
+        // 活动本身
+        Event event;
+        event.id = finalChapter2EventId;
+        event.eventType = Enums::EventType::world_bloom;
+        md.events.push_back(event);
+
+        // 角色加成
+        for (auto& gameCharacterUnit : md.gameCharacterUnits) {
+            EventDeckBonus bonus;
+            bonus.eventId = finalChapter2EventId;
+            bonus.gameCharacterUnitId = gameCharacterUnit.id;
+            bonus.bonusRate = 5.0;
+            bonus.cardAttr = Enums::Attr::null;
+            md.eventDeckBonuses.push_back(bonus);
+        }
+
+        // wl3限定卡牌加成：动态选取真实WL3章节活动的当期卡，第5章数据落地后自动包含
+        std::set<int> limitedCardIds;
+        std::vector<EventCard> newEventCards{};
+        for (const auto& eventCard : md.eventCards) {
+            if (eventCard.eventId >= 1000 ||
+                md.getWorldBloomEventTurn(eventCard.eventId) != 3 ||
+                eventCard.bonusRate <= 0) {
+                continue;
+            }
+            const auto eventIt = std::find_if(md.events.begin(), md.events.end(), [&](const Event& current) {
+                return current.id == eventCard.eventId;
+            });
+            if (eventIt == md.events.end() || eventIt->eventType != Enums::EventType::world_bloom)
+                continue;
+            const auto cardIt = std::find_if(md.cards.begin(), md.cards.end(), [&](const Card& card) {
+                return card.id == eventCard.cardId;
+            });
+            if (cardIt == md.cards.end() || !limitedCardIds.insert(eventCard.cardId).second)
+                continue;
+
+            auto newEventCard = eventCard;
+            newEventCard.eventId = finalChapter2EventId;
+            newEventCard.bonusRate = 25.0;
+            newEventCard.leaderBonusRate = 20.0;
+            newEventCards.push_back(newEventCard);
+
+            // 支援里的wl3限定卡牌加成
+            WorldBloomSupportDeckUnitEventLimitedBonus supportBonus;
+            supportBonus.eventId = finalChapter2EventId;
+            supportBonus.gameCharacterId = cardIt->characterId;
+            supportBonus.cardId = eventCard.cardId;
+            supportBonus.bonusRate = 20.0;
+            md.worldBloomSupportDeckUnitEventLimitedBonuses.push_back(supportBonus);
+        }
+        md.eventCards.insert(md.eventCards.end(), newEventCards.begin(), newEventCards.end());
     }
 }
 
@@ -410,6 +474,7 @@ void MasterData::finishLoad() {
     addFakeEvent(Enums::EventType::marathon);
     addFakeEvent(Enums::EventType::cheerful);
     addFinalChapterEventIfNeeded(*this);
+    addFinalChapter2EventIfNeeded(*this);
 }
 
 void MasterData::loadFromFiles(const std::string& baseDir) {

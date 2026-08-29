@@ -40,8 +40,14 @@ std::optional<CardDetail> CardCalculator::getCardDetail(
     // 判断强制使用画布
     hasCanvasBonus |= cfg.canvas;
 
-    // 是否是wl终章
-    bool isFinalChapter = eventConfig.has_value() ? eventConfig->eventId == finalChapterEventId : false;
+    // wl终章限制玩偶加成：终章1上限2%，终章2上限6%
+    std::optional<int> fixtureBonusLimit = std::nullopt;
+    if (eventConfig.has_value()) {
+        if (eventConfig->eventId == finalChapterEventId)
+            fixtureBonusLimit = 20;
+        else if (eventConfig->eventId == finalChapter2EventId)
+            fixtureBonusLimit = 60;
+    }
 
     auto userCard0 = this->cardService.applyCardConfig(userCard, card, cfg);
     auto units = this->cardService.getCardUnits(card);
@@ -51,7 +57,7 @@ std::optional<CardDetail> CardCalculator::getCardDetail(
     auto skill = this->skillCalculator.getCardSkill(userCard0, card, scoreUpLimit);
     auto power = this->powerCalculator.getCardPower(
         userCard0, card, units, userAreaItemLevels, hasCanvasBonus, userGateBonuses,
-        isFinalChapter ? std::optional<int>(20) : std::nullopt  // 终章限制玩偶加成2%
+        fixtureBonusLimit
     );
     std::array<std::array<int, 4>, 2> powerTotals{};
     int unitIndex = 0;

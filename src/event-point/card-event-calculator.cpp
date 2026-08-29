@@ -60,14 +60,16 @@ CardEventBonusInfo CardEventCalculator::getCardEventBonus(const UserCard &userCa
     }
 
     // 终章机制
-    if (eventId == finalChapterEventId) {
-        // 1k牌加成
-        double leaderHonorBonus = this->dataProvider.userData->userCharacterFinalChapterHonorEventBonusMap[card.characterId];
+    if (isFinalChapterEvent(eventId)) {
+        // 1k牌加成，两轮终章各认各的章节称号
+        double leaderHonorBonus = eventId == finalChapterEventId
+            ? this->dataProvider.userData->userCharacterFinalChapterHonorEventBonusMap[card.characterId]
+            : this->dataProvider.userData->userCharacterFinalChapter2HonorEventBonusMap[card.characterId];
         // 当期队长加成
         double leaderLimitBonus = 0.0;
         for (const auto& it : eventCards) {
             if (it.eventId == eventId && it.cardId == card.id) {
-                leaderLimitBonus = 20.0;
+                leaderLimitBonus = it.leaderBonusRate;
                 break;
             }
         }

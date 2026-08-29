@@ -299,7 +299,7 @@ BestPermutationResult BaseDeckRecommend::getBestPermutation(
     // 存在固定队长角色则不允许把技能最强的换到队长
     if (config.fixedCharacters.size()) bestSkillAsLeader = false;
     // 终章活动不允许把技能最强的换到队长
-    if (eventId.has_value() && eventId.value() == finalChapterEventId) bestSkillAsLeader = false;
+    if (eventId.has_value() && isFinalChapterEvent(eventId.value())) bestSkillAsLeader = false;
     struct BestPermutationContext {
         const std::function<Score(const DeckScoreDetail &)> &scoreFunc;
         const DeckRecommendConfig& config;
@@ -425,7 +425,7 @@ RecommendDeck BaseDeckRecommend::materializeCandidate(
 ) const {
     bool bestSkillAsLeader = config.bestSkillAsLeader;
     if (config.fixedCharacters.size()) bestSkillAsLeader = false;
-    if (eventId.has_value() && eventId.value() == finalChapterEventId) bestSkillAsLeader = false;
+    if (eventId.has_value() && isFinalChapterEvent(eventId.value())) bestSkillAsLeader = false;
 
     auto deckDetails = deckCalculator.getDeckDetailByCards(
         deckCards,
@@ -465,7 +465,7 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
 
     std::optional<double> scoreUpLimit = std::nullopt;
     // 终章技能加分上限为140
-    if (eventConfig.eventId == finalChapterEventId && !Enums::LiveType::isChallenge(liveType))
+    if (isFinalChapterEvent(eventConfig.eventId) && !Enums::LiveType::isChallenge(liveType))
         scoreUpLimit = 140.0;
 
     auto cards = cardCalculator.batchGetCardDetail(
@@ -476,7 +476,7 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
     // 归类支援卡组；索引只需覆盖前 32 位，实际最多取 25 张并排除 5 张主卡。
     SupportDeckMap supportCards{};
     int maxSupportCardId = 0;
-    if (eventConfig.eventId == finalChapterEventId ||
+    if (isFinalChapterEvent(eventConfig.eventId) ||
         eventConfig.eventType == Enums::EventType::world_bloom) {
         for (const auto& card : userCards)
             maxSupportCardId = std::max(maxSupportCardId, card.cardId);
@@ -498,7 +498,7 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
             result.topRankByCardId[result.cards[i].cardId] = static_cast<uint8_t>(i);
         return result;
     };
-    if (eventConfig.eventId == finalChapterEventId) {
+    if (isFinalChapterEvent(eventConfig.eventId)) {
         // 终章对每个角色都算一个支援卡组排序
         for (int i = 1; i <= 26; i++)
             supportCards[i] = buildSupportCards(i);
@@ -621,6 +621,9 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
         // 异色加成取加成表最大档
         for (const auto& it : this->dataProvider.masterData->worldBloomDifferentAttributeBonuses)
             scoreBound.diffAttrBonus = std::max(scoreBound.diffAttrBonus, it.bonusRate);
+        // 终章2的shuffle unit bonus同样是队伍级加成，按最大档计入上界
+        if (eventConfig.eventId == finalChapter2EventId)
+            scoreBound.diffAttrBonus += 50.0;
         // 异色加成也要计入加成上界
         scoreBound.hasEventBonus |= scoreBound.diffAttrBonus > 0.0;
         // 支援加成取每组排序后前 N 张之和的最大值；实际值还要排除主队伍卡牌，只会更小

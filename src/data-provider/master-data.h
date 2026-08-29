@@ -8,7 +8,12 @@
 #include "data-provider/master-data-types.h"
 
 
-constexpr int finalChapterEventId = 180;
+constexpr int finalChapterEventId = 180;    // WL2终章
+constexpr int finalChapter2EventId = 217;   // WL3终章
+
+constexpr bool isFinalChapterEvent(int eventId) {
+    return eventId == finalChapterEventId || eventId == finalChapter2EventId;
+}
 
 // 主数据 JSON 原文按 key 索引；只持有调用方内存的视图，解析期间不再复制一份
 using MasterDataStrings = std::map<std::string, std::string_view>;

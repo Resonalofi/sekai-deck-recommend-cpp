@@ -15,6 +15,7 @@ enum class SkillReferenceChooseStrategy {
 struct DeckBonusInfo {
     std::array<double, 5> cardBonus{};
     double diffAttrBonus = 0.;
+    double shuffleUnitBonus = 0.;   // 终章2按编成内组合数发挥的加成
     double totalBonus = 0.;
 };
 

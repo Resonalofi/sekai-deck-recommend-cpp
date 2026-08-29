@@ -8,6 +8,7 @@ struct EventCard {
     int cardId = 0;
     int eventId = 0;
     double bonusRate = 0.0;
+    double leaderBonusRate = 0.0;   // 终章当期卡作为队长的额外加成
 
     static inline std::vector<EventCard> fromJsonList(const json& jsonData) {
         std::vector<EventCard> eventCards;
@@ -17,6 +18,7 @@ struct EventCard {
             eventCard.cardId = item.value("cardId", 0);
             eventCard.eventId = item.value("eventId", 0);
             eventCard.bonusRate = item.value("bonusRate", 0.0);
+            eventCard.leaderBonusRate = item.value("leaderBonusRate", 0.0);
             eventCards.push_back(eventCard);
         }
         return eventCards;

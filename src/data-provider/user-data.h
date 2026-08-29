@@ -21,7 +21,8 @@ public:
     std::vector<UserWorldBloomSupportDeck> userWorldBloomSupportDecks;
 
     // 预处理终章用户哪些角色有称号活动加成，在dataProvider中计算
-    std::map<int, double> userCharacterFinalChapterHonorEventBonusMap;     
+    std::map<int, double> userCharacterFinalChapterHonorEventBonusMap;      // 终章1，来自wl_2nd章节称号
+    std::map<int, double> userCharacterFinalChapter2HonorEventBonusMap;     // 终章2，来自wl_3rd章节称号
 
     void loadFromJson(const json& j);
 

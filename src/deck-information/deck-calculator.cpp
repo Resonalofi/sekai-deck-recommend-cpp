@@ -207,20 +207,22 @@ DeckBonusInfo DeckCalculator::getDeckBonus(
         ret.cardBonus[i] = deckCards[i]->maxEventBonus.value();
 
     // 终章机制
-    if (eventId.has_value() && eventId.value() == finalChapterEventId) {
+    if (eventId.has_value() && isFinalChapterEvent(eventId.value())) {
         // 不是队长的角色扣掉1k牌加成和队长当期加成
         for (int i = 1; i < (int)deckCards.size(); i++) {
             ret.cardBonus[i] -= deckCards[i]->leaderHonorEventBonus.value_or(0.0);
             ret.cardBonus[i] -= deckCards[i]->leaderLimitEventBonus.value_or(0.0);
         }
-        // 最多生效4个当期
-        int limitedEventBonusNum = 0;
-        for (int i = 0; i < (int)deckCards.size(); i++) {
-            if (deckCards[i]->limitedEventBonus.value_or(0.) > 0) {
-                if(++limitedEventBonusNum == 5) {
-                    // 去掉最后一个当期加成
-                    ret.cardBonus[i] -= deckCards[i]->limitedEventBonus.value();
-                    break;
+        // 终章1最多生效4个当期；终章2上限放宽到5个，即全队生效、无需扣减
+        if (eventId.value() == finalChapterEventId) {
+            int limitedEventBonusNum = 0;
+            for (int i = 0; i < (int)deckCards.size(); i++) {
+                if (deckCards[i]->limitedEventBonus.value_or(0.) > 0) {
+                    if(++limitedEventBonusNum == 5) {
+                        // 去掉最后一个当期加成
+                        ret.cardBonus[i] -= deckCards[i]->limitedEventBonus.value();
+                        break;
+                    }
                 }
             }
         }
@@ -236,13 +238,29 @@ DeckBonusInfo DeckCalculator::getDeckBonus(
         int attr_count = 0;
         for (int i = 0; i < 10; ++i) 
             attr_count += attr_vis[i];
-        auto it = findOrThrow(worldBloomDifferentAttributeBonuses, [&](const auto &it) { 
-            return it.attributeCount == attr_count; 
+        auto it = findOrThrow(worldBloomDifferentAttributeBonuses, [&](const auto &it) {
+            return it.attributeCount == attr_count;
         }, [&]() { return "World bloom different attribute bonus not found for attributeCount=" + std::to_string(attr_count); });
         ret.diffAttrBonus = it.bonusRate;
     }
 
-    ret.totalBonus = ret.diffAttrBonus + std::accumulate(
+    // 终章2按编成内组合数发挥shuffle unit bonus；V家一律按“バーチャル・シンガー”计，不按支援组合计
+    if (eventId.value_or(0) == finalChapter2EventId) {
+        uint16_t units = 0;
+        for (const auto &card : deckCards) {
+            const int unit = card->characterId >= 21
+                ? Enums::Unit::piapro
+                : std::countr_zero(card->unitMask);
+            units |= uint16_t{1} << unit;
+        }
+        const int unitCount = std::popcount(units);
+        ret.shuffleUnitBonus = unitCount >= 5 ? 50.0
+                             : unitCount == 4 ? 30.0
+                             : unitCount == 3 ? 10.0
+                             : 0.0;
+    }
+
+    ret.totalBonus = ret.diffAttrBonus + ret.shuffleUnitBonus + std::accumulate(
         ret.cardBonus.begin(),
         ret.cardBonus.begin() + deckCards.size(),
         0.0
@@ -393,7 +411,7 @@ void DeckCalculator::forEachDeckState(
     SupportDeckBonus supportDeckBonus{};
     if (supportCards.size()) {
         SupportDeckCards* pSupportCards = nullptr;
-        if (eventId.value_or(0) == finalChapterEventId)
+        if (isFinalChapterEvent(eventId.value_or(0)))
             pSupportCards = &supportCards[cardDetails[0]->characterId]; // 终章支援角色为队长角色
         else
             pSupportCards = &(supportCards.begin()->second);    // 普通wl只会处理出一组支援卡牌列表
@@ -488,7 +506,7 @@ void DeckCalculator::forEachMultiLiveScoreState(
     double supportDeckBonus = 0.0;
     if (!supportCards.empty()) {
         SupportDeckCards* selectedSupportCards = nullptr;
-        if (eventId.value_or(0) == finalChapterEventId)
+        if (isFinalChapterEvent(eventId.value_or(0)))
             selectedSupportCards = &supportCards[cardDetails[0]->characterId];
         else
             selectedSupportCards = &supportCards.begin()->second;
