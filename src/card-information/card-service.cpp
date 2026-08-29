@@ -19,11 +19,9 @@ UserCard CardService::applyCardConfig(const UserCard &userCard, const Card &card
 {
     bool rankMax = cardConfig.rankMax;
     bool episodeRead = cardConfig.episodeRead;
-    bool masterMax = cardConfig.masterMax;
-    bool skillMax = cardConfig.skillMax;
 
     // 都按原样，那就什么都无需调整
-    if (!rankMax && !episodeRead && !masterMax && !skillMax
+    if (!rankMax && !episodeRead
         && !cardConfig.masterRank.has_value() && !cardConfig.skillLevel.has_value())
         return userCard;
 
@@ -52,18 +50,14 @@ UserCard CardService::applyCardConfig(const UserCard &userCard, const Card &card
         }
     }
 
-    // 突破：指定等级优先于满破开关
+    // 突破：满专精即 5
     if (cardConfig.masterRank.has_value()) {
         ret.masterRank = std::clamp(cardConfig.masterRank.value(), 0, 5);
-    } else if (masterMax) {
-        ret.masterRank = 5;
     }
 
-    // 技能：指定等级优先于满技能开关
+    // 技能：超出稀有度上限时按上限处理
     if (cardConfig.skillLevel.has_value()) {
         ret.skillLevel = std::clamp(cardConfig.skillLevel.value(), 1, cardRarity.maxSkillLevel);
-    } else if (skillMax) {
-        ret.skillLevel = cardRarity.maxSkillLevel;
     }
 
     return ret;

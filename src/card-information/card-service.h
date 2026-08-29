@@ -7,10 +7,7 @@ struct CardConfig {
     bool disable = false;       // 禁用此稀有度卡牌
     bool rankMax = false;       // 强制满级
     bool episodeRead = false;   // 前后篇剧情是否已读
-    bool masterMax = false;     // 强制满破
-    bool skillMax = false;      // 强制满技能
     bool canvas = false;        // 强制使用画布加成
-    // 指定具体等级，优先于对应的max开关；超出上限时按上限处理
     std::optional<int> masterRank = std::nullopt;   // 指定专精等级
     std::optional<int> skillLevel = std::nullopt;   // 指定技能等级
 };

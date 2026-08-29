@@ -26,18 +26,14 @@ class DeckRecommendCardConfig:
         disable (bool): Disable this rarity, default is False
         level_max (bool): Always use max level, default is False
         episode_read (bool): Always use read episode, default is False
-        master_max (bool): Always use max master rank, default is False
-        skill_max (bool): Always use max skill level, default is False
         canvas (bool): Always use canvas bonus, default is False
-        master_rank (int): Use this exact master rank (0-5), takes precedence over master_max, default is None
-        skill_level (int): Use this exact skill level (clamped to the rarity max), takes precedence over skill_max, default is None
+        master_rank (int): Use this master rank (0-5; 5 is max), keeps the card as-is when None, default is None
+        skill_level (int): Use this skill level (clamped to the rarity max), keeps the card as-is when None, default is None
     """
 
     disable: Optional[bool]
     level_max: Optional[bool]
     episode_read: Optional[bool]
-    master_max: Optional[bool]
-    skill_max: Optional[bool]
     canvas: Optional[bool]
     master_rank: Optional[int]
     skill_level: Optional[int]
@@ -57,19 +53,15 @@ class DeckRecommendSingleCardConfig:
         disable (bool): Disable this card, default is False
         level_max (bool): Always use max level, default is False
         episode_read (bool): Always use read episode, default is False
-        master_max (bool): Always use max master rank, default is False
-        skill_max (bool): Always use max skill level, default is False
         canvas (bool): Always use canvas bonus, default is False
-        master_rank (int): Use this exact master rank (0-5), takes precedence over master_max, default is None
-        skill_level (int): Use this exact skill level (clamped to the rarity max), takes precedence over skill_max, default is None
+        master_rank (int): Use this master rank (0-5; 5 is max), keeps the card as-is when None, default is None
+        skill_level (int): Use this skill level (clamped to the rarity max), keeps the card as-is when None, default is None
     """
 
     card_id: int
     disable: Optional[bool]
     level_max: Optional[bool]
     episode_read: Optional[bool]
-    master_max: Optional[bool]
-    skill_max: Optional[bool]
     canvas: Optional[bool]
     master_rank: Optional[int]
     skill_level: Optional[int]
