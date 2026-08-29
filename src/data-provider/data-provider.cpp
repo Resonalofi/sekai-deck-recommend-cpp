@@ -1,6 +1,58 @@
 #include "data-provider.h"
 
 #include <algorithm>
+#include <string_view>
+
+namespace {
+
+// 从 assetbundleName 里取 <prefix><字段>_cp<章节> 的两段。
+// 称号命名来自主数据，格式不符时返回 nullopt 让调用方跳过该称号；
+// 解析失败不应抛异常，否则会连带整个组卡请求一起失败。
+struct HonorChapterRef {
+    std::string_view field;     // prefix 与 "_cp" 之间的内容
+    int chapter = 0;            // "_cp" 之后的一位数字
+};
+
+std::optional<HonorChapterRef> parseHonorChapterRef(
+    std::string_view name,
+    std::string_view prefix
+) {
+    const auto prefixPos = name.find(prefix);
+    if (prefixPos == std::string_view::npos)
+        return std::nullopt;
+
+    const auto fieldPos = prefixPos + prefix.size();
+    const auto markerPos = name.find("_cp", fieldPos);
+    if (markerPos == std::string_view::npos || markerPos <= fieldPos)
+        return std::nullopt;
+
+    const auto chapterPos = markerPos + 3;
+    if (chapterPos >= name.size())
+        return std::nullopt;
+    const char chapterDigit = name[chapterPos];
+    if (chapterDigit < '0' || chapterDigit > '9')
+        return std::nullopt;
+
+    return HonorChapterRef{
+        name.substr(fieldPos, markerPos - fieldPos),
+        chapterDigit - '0',
+    };
+}
+
+// 纯数字且长度合理时转 int，否则 nullopt（避免 std::stoi 抛 invalid_argument/out_of_range）
+std::optional<int> parseSmallInt(std::string_view text) {
+    if (text.empty() || text.size() > 3)
+        return std::nullopt;
+    int value = 0;
+    for (const char digit : text) {
+        if (digit < '0' || digit > '9')
+            return std::nullopt;
+        value = value * 10 + (digit - '0');
+    }
+    return value;
+}
+
+}  // namespace
 
 void DataProvider::init()
 {
@@ -41,33 +93,27 @@ void DataProvider::init()
                 continue;
 
             // 终章1：wl_2nd_<团名>_cp<章节>章节排名称号
-            auto start_idx = honor->assetbundleName.find("wl_2nd");
-            if (start_idx != std::string::npos) {
-                start_idx += 7;
-                auto end_idx = honor->assetbundleName.find("_cp", start_idx);
-                auto unit_name = honor->assetbundleName.substr(start_idx, end_idx - start_idx);
-                int chapter = std::stoi(honor->assetbundleName.substr(end_idx + 3, 1));
-                auto& characters = unitCharacters[unit_name];
-                for (auto& item : masterData->worldBlooms) {
-                    // 只匹配真实WL2章节；假活动的章节按角色ID升序合成，顺序与真实章节不同
-                    if (characters.count(item.gameCharacterId) && item.chapterNo == chapter
-                        && item.eventId > 140 && item.eventId < 1000) {
-                        userData->userCharacterFinalChapterHonorEventBonusMap[item.gameCharacterId] = 50.0;
+            if (const auto ref = parseHonorChapterRef(honor->assetbundleName, "wl_2nd_")) {
+                const auto unitIt = unitCharacters.find(std::string(ref->field));
+                if (unitIt != unitCharacters.end()) {
+                    const auto& characters = unitIt->second;
+                    for (auto& item : masterData->worldBlooms) {
+                        // 只匹配真实WL2章节；假活动的章节按角色ID升序合成，顺序与真实章节不同
+                        if (characters.count(item.gameCharacterId) && item.chapterNo == ref->chapter
+                            && item.eventId > 140 && item.eventId < 1000) {
+                            userData->userCharacterFinalChapterHonorEventBonusMap[item.gameCharacterId] = 50.0;
+                        }
                     }
                 }
             }
 
             // 终章2：wl_3rd_part<第几场>_cp<章节>章节排名称号（2025年以前的章节称号不生效）
-            start_idx = honor->assetbundleName.find("wl_3rd_part");
-            if (start_idx != std::string::npos) {
-                start_idx += 11;
-                auto end_idx = honor->assetbundleName.find("_cp", start_idx);
-                int part = std::stoi(honor->assetbundleName.substr(start_idx, end_idx - start_idx));
-                int chapter = std::stoi(honor->assetbundleName.substr(end_idx + 3, 1));
-                if (part >= 1 && part <= int(wl3ChapterEvents.size())) {
-                    const int chapterEventId = wl3ChapterEvents[part - 1]->id;
+            if (const auto ref = parseHonorChapterRef(honor->assetbundleName, "wl_3rd_part")) {
+                const auto part = parseSmallInt(ref->field);
+                if (part.has_value() && *part >= 1 && *part <= int(wl3ChapterEvents.size())) {
+                    const int chapterEventId = wl3ChapterEvents[*part - 1]->id;
                     for (auto& item : masterData->worldBlooms) {
-                        if (item.eventId == chapterEventId && item.chapterNo == chapter) {
+                        if (item.eventId == chapterEventId && item.chapterNo == ref->chapter) {
                             userData->userCharacterFinalChapter2HonorEventBonusMap[item.gameCharacterId] = 50.0;
                         }
                     }

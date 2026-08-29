@@ -29,14 +29,18 @@ class DeckRecommendCardConfig:
         master_max (bool): Always use max master rank, default is False
         skill_max (bool): Always use max skill level, default is False
         canvas (bool): Always use canvas bonus, default is False
+        master_rank (int): Use this exact master rank (0-5), takes precedence over master_max, default is None
+        skill_level (int): Use this exact skill level (clamped to the rarity max), takes precedence over skill_max, default is None
     """
-    
+
     disable: Optional[bool]
     level_max: Optional[bool]
     episode_read: Optional[bool]
     master_max: Optional[bool]
     skill_max: Optional[bool]
     canvas: Optional[bool]
+    master_rank: Optional[int]
+    skill_level: Optional[int]
 
     def to_dict(self) -> Dict[str, Any]:
         ...
@@ -56,8 +60,10 @@ class DeckRecommendSingleCardConfig:
         master_max (bool): Always use max master rank, default is False
         skill_max (bool): Always use max skill level, default is False
         canvas (bool): Always use canvas bonus, default is False
+        master_rank (int): Use this exact master rank (0-5), takes precedence over master_max, default is None
+        skill_level (int): Use this exact skill level (clamped to the rarity max), takes precedence over skill_max, default is None
     """
-    
+
     card_id: int
     disable: Optional[bool]
     level_max: Optional[bool]
@@ -65,6 +71,8 @@ class DeckRecommendSingleCardConfig:
     master_max: Optional[bool]
     skill_max: Optional[bool]
     canvas: Optional[bool]
+    master_rank: Optional[int]
+    skill_level: Optional[int]
 
     def to_dict(self) -> Dict[str, Any]:
         ...
@@ -170,6 +178,8 @@ class DeckRecommendOptions:
         filter_other_unit (bool): Whether to filter out other units for banner event, default is False
         fixed_cards (List[int]): List of card IDs that always included in the deck, default is None
         fixed_characters (List[int]): List of character IDs that always included in the deck (first is always leader), cannot used in challenge live, cannot used with fixed_cards together, default is None
+        own_all_bonus_cards (bool): Treat all bonus cards (bonusRate > 0) of the event as owned, adding virtual cards to the pool, default is False
+        bonus_card_config (DeckRecommendCardConfig): Card config applied to every bonus card when own_all_bonus_cards is set (entries in single_card_configs take precedence), default is level_max/episode_read only
         target_bonus_list (List[int]): List of target event bonus, required when target is "bonus"
         skill_reference_choose_strategy (str): Strategy for bfes skill reference choose in ["average", "max", "min"], default is "average"
         keep_after_training_state (bool): Whether to keep after-training state of bfes cards, default is False
@@ -213,6 +223,8 @@ class DeckRecommendOptions:
     filter_other_unit: Optional[bool]
     fixed_cards: Optional[List[int]]
     fixed_characters: Optional[List[int]]
+    own_all_bonus_cards: Optional[bool]
+    bonus_card_config: Optional[DeckRecommendCardConfig]
     target_bonus_list: Optional[List[int]]
     skill_reference_choose_strategy: Optional[str]
     keep_after_training_state: Optional[bool]

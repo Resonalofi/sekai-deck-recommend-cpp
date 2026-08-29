@@ -66,10 +66,15 @@ struct DeckRecommendConfig {
     std::vector<int> bonusList = {};
 
     // 指定一定要包含的卡牌
-    std::vector<int> fixedCards = {}; 
+    std::vector<int> fixedCards = {};
 
     // 指定从队长位开始的卡牌所属角色（队长后的顺序无所谓）
     std::vector<int> fixedCharacters = {};
+
+    // 全当期：视为拥有本活动全部加成卡（bonusRate>0）加入卡池，由算法自行取舍
+    bool ownAllBonusCards = false;
+    // 全当期卡统一套用的单卡配置，与普通单卡配置同构（singleCardConfig 里的显式配置优先）
+    CardConfig bonusCardConfig = {.rankMax = true, .episodeRead = true};
 
     // bfes花前技能选择策略
     SkillReferenceChooseStrategy skillReferenceChooseStrategy = SkillReferenceChooseStrategy::Average;
@@ -131,6 +136,7 @@ class BaseDeckRecommend {
     DataProvider dataProvider;
     DeckCalculator deckCalculator;
     CardCalculator cardCalculator;
+    CardService cardService;
     LiveCalculator liveCalculator;
     AreaItemService areaItemService;
 
@@ -140,11 +146,27 @@ public:
         : dataProvider(dataProvider),
           deckCalculator(dataProvider),
           cardCalculator(dataProvider),
+          cardService(dataProvider),
           liveCalculator(dataProvider),
           areaItemService(dataProvider) {}
 
     // 计算第一位+后几位顺序无关的哈希值
     uint64_t calcDeckHash(const std::vector<const CardDetail*>& deck);
+
+    // 生成一张初始养成状态的虚拟卡牌（用于固定卡牌兜底与全当期）
+    UserCard makeVirtualUserCard(int cardId) const;
+
+    /**
+     * 全当期：把本活动全部加成卡（bonusRate>0）视为已拥有。
+     * 未拥有的生成虚拟卡加入卡池，并把 bonusCardConfig 直接套用到卡牌状态上
+     * （支援卡组读的是卡牌原始状态，这样WL支援加成同样按该配置计算）。
+     * 已在 singleCardConfig 里显式配置过的卡牌不受影响。
+     */
+    void addEventBonusCardsToPool(
+        int eventId,
+        std::vector<UserCard>& userCards,
+        DeckRecommendConfig& config
+    ) const;
 
     /**
      * 获取卡组的最佳排列并计算分数，返回可能用到的最优推荐卡组信息

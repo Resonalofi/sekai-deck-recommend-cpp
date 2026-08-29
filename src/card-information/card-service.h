@@ -10,6 +10,9 @@ struct CardConfig {
     bool masterMax = false;     // 强制满破
     bool skillMax = false;      // 强制满技能
     bool canvas = false;        // 强制使用画布加成
+    // 指定具体等级，优先于对应的max开关；超出上限时按上限处理
+    std::optional<int> masterRank = std::nullopt;   // 指定专精等级
+    std::optional<int> skillLevel = std::nullopt;   // 指定技能等级
 };
 
 class CardService {
@@ -32,7 +35,7 @@ public:
      * @param card 卡牌
      * @param cardConfig 卡牌配置
      */
-    UserCard applyCardConfig(const UserCard& userCard, const Card& card, const CardConfig& cardConfig);
+    UserCard applyCardConfig(const UserCard& userCard, const Card& card, const CardConfig& cardConfig) const;
 
 };
 

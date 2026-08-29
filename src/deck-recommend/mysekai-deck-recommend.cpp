@@ -16,6 +16,9 @@ RecommendResult MysekaiDeckRecommend::recommendMysekaiDeck(
     cfg.keepAfterTrainingState = true;
 
     auto userCards = dataProvider.userData->userCards;
+    // 全当期：把本活动的当期卡视为已拥有
+    if (cfg.ownAllBonusCards)
+        baseRecommend.addEventBonusCardsToPool(eventId, userCards, cfg);
     return baseRecommend.recommendHighScoreDeck(userCards,
         this->mysekaiEventCalculator.getMysekaiEventPointFunction(), 
         cfg, 

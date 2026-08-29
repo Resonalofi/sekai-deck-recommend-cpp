@@ -144,6 +144,8 @@ struct PyCardConfig {
     std::optional<bool> master_max;
     std::optional<bool> skill_max;
     std::optional<bool> canvas;
+    std::optional<int> master_rank;
+    std::optional<int> skill_level;
 
 #ifdef SEKAI_DECK_RECOMMEND_PYTHON
     py::dict to_dict() const {
@@ -154,6 +156,8 @@ struct PyCardConfig {
         if (master_max.has_value())     result["master_max"] = master_max.value();
         if (skill_max.has_value())      result["skill_max"] = skill_max.value();
         if (canvas.has_value())         result["canvas"] = canvas.value();
+        if (master_rank.has_value())    result["master_rank"] = master_rank.value();
+        if (skill_level.has_value())    result["skill_level"] = skill_level.value();
         return result;
     }
     static PyCardConfig from_dict(const py::dict& dict) {
@@ -164,6 +168,8 @@ struct PyCardConfig {
         if (dict.contains("master_max"))     config.master_max = dict["master_max"].cast<bool>();
         if (dict.contains("skill_max"))      config.skill_max = dict["skill_max"].cast<bool>();
         if (dict.contains("canvas"))         config.canvas = dict["canvas"].cast<bool>();
+        if (dict.contains("master_rank"))    config.master_rank = dict["master_rank"].cast<int>();
+        if (dict.contains("skill_level"))    config.skill_level = dict["skill_level"].cast<int>();
         return config;
     }
 #endif
@@ -178,6 +184,8 @@ struct PySingleCardConfig {
     std::optional<bool> master_max;
     std::optional<bool> skill_max;
     std::optional<bool> canvas;
+    std::optional<int> master_rank;
+    std::optional<int> skill_level;
 
 #ifdef SEKAI_DECK_RECOMMEND_PYTHON
     py::dict to_dict() const {
@@ -189,6 +197,8 @@ struct PySingleCardConfig {
         if (master_max.has_value())     result["master_max"] = master_max.value();
         if (skill_max.has_value())      result["skill_max"] = skill_max.value();
         if (canvas.has_value())         result["canvas"] = canvas.value();
+        if (master_rank.has_value())    result["master_rank"] = master_rank.value();
+        if (skill_level.has_value())    result["skill_level"] = skill_level.value();
         return result;
     }
     static PySingleCardConfig from_dict(const py::dict& dict) {
@@ -200,6 +210,8 @@ struct PySingleCardConfig {
         if (dict.contains("master_max"))     config.master_max = dict["master_max"].cast<bool>();
         if (dict.contains("skill_max"))      config.skill_max = dict["skill_max"].cast<bool>();
         if (dict.contains("canvas"))         config.canvas = dict["canvas"].cast<bool>();
+        if (dict.contains("master_rank"))    config.master_rank = dict["master_rank"].cast<int>();
+        if (dict.contains("skill_level"))    config.skill_level = dict["skill_level"].cast<int>();
         return config;
     }
 #endif
@@ -324,6 +336,8 @@ struct PyDeckRecommendOptions {
     std::optional<bool> filter_other_unit;
     std::optional<std::vector<int>> fixed_cards;
     std::optional<std::vector<int>> fixed_characters;
+    std::optional<bool> own_all_bonus_cards;
+    std::optional<PyCardConfig> bonus_card_config;
     std::optional<std::vector<int>> target_bonus_list;
     std::optional<std::string> skill_reference_choose_strategy;
     std::optional<bool> keep_after_training_state;
@@ -388,6 +402,10 @@ struct PyDeckRecommendOptions {
             result["fixed_cards"] = fixed_cards.value();
         if (fixed_characters.has_value())
             result["fixed_characters"] = fixed_characters.value();
+        if (own_all_bonus_cards.has_value())
+            result["own_all_bonus_cards"] = own_all_bonus_cards.value();
+        if (bonus_card_config.has_value())
+            result["bonus_card_config"] = bonus_card_config->to_dict();
         if (target_bonus_list.has_value())
             result["target_bonus_list"] = target_bonus_list.value();
         if (skill_reference_choose_strategy.has_value())
@@ -465,6 +483,10 @@ struct PyDeckRecommendOptions {
             options.fixed_cards = dict["fixed_cards"].cast<std::vector<int>>();
         if (dict.contains("fixed_characters"))
             options.fixed_characters = dict["fixed_characters"].cast<std::vector<int>>();
+        if (dict.contains("own_all_bonus_cards"))
+            options.own_all_bonus_cards = dict["own_all_bonus_cards"].cast<bool>();
+        if (dict.contains("bonus_card_config"))
+            options.bonus_card_config = PyCardConfig::from_dict(dict["bonus_card_config"].cast<py::dict>());
         if (dict.contains("target_bonus_list"))
             options.target_bonus_list = dict["target_bonus_list"].cast<std::vector<int>>();
         if (dict.contains("skill_reference_choose_strategy"))
@@ -923,6 +945,28 @@ class SekaiDeckRecommend {
                 config.fixedCharacters = fixed_characters;
             }
 
+            // 全当期
+            config.ownAllBonusCards = pyoptions.own_all_bonus_cards.value_or(false);
+            if (pyoptions.bonus_card_config.has_value()) {
+                const auto& bonus = pyoptions.bonus_card_config.value();
+                if (bonus.disable.has_value())
+                    config.bonusCardConfig.disable = bonus.disable.value();
+                if (bonus.level_max.has_value())
+                    config.bonusCardConfig.rankMax = bonus.level_max.value();
+                if (bonus.episode_read.has_value())
+                    config.bonusCardConfig.episodeRead = bonus.episode_read.value();
+                if (bonus.master_max.has_value())
+                    config.bonusCardConfig.masterMax = bonus.master_max.value();
+                if (bonus.skill_max.has_value())
+                    config.bonusCardConfig.skillMax = bonus.skill_max.value();
+                if (bonus.canvas.has_value())
+                    config.bonusCardConfig.canvas = bonus.canvas.value();
+                if (bonus.master_rank.has_value())
+                    config.bonusCardConfig.masterRank = bonus.master_rank.value();
+                if (bonus.skill_level.has_value())
+                    config.bonusCardConfig.skillLevel = bonus.skill_level.value();
+            }
+
             // skill reference choose strategy
             std::string skill_reference_choose_strategy = pyoptions.skill_reference_choose_strategy.value_or(DEFAULT_SKILL_REFERENCE_CHOOSE_STRATEGY);
             if (!VALID_SKILL_REFERENCE_CHOOSE_STRATEGIES.count(skill_reference_choose_strategy))
@@ -1029,6 +1073,10 @@ class SekaiDeckRecommend {
                         card_config.skillMax = value->skill_max.value();
                     if (value->canvas.has_value())
                         card_config.canvas = value->canvas.value();
+                    if (value->master_rank.has_value())
+                        card_config.masterRank = value->master_rank.value();
+                    if (value->skill_level.has_value())
+                        card_config.skillLevel = value->skill_level.value();
                 }
                 config.cardConfig[mapEnum(EnumMap::cardRarityType, key)] = card_config;
             }
@@ -1049,6 +1097,10 @@ class SekaiDeckRecommend {
                         cfg.skillMax = card_config.skill_max.value();
                     if (card_config.canvas.has_value())
                         cfg.canvas = card_config.canvas.value();
+                    if (card_config.master_rank.has_value())
+                        cfg.masterRank = card_config.master_rank.value();
+                    if (card_config.skill_level.has_value())
+                        cfg.skillLevel = card_config.skill_level.value();
                     config.singleCardConfig[card_config.card_id] = cfg;
                 }
             }
@@ -1390,7 +1442,9 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
         .def_readwrite("episode_read", &PyCardConfig::episode_read)
         .def_readwrite("master_max", &PyCardConfig::master_max)
         .def_readwrite("skill_max", &PyCardConfig::skill_max)
-        .def_readwrite("canvas", &PyCardConfig::canvas);
+        .def_readwrite("canvas", &PyCardConfig::canvas)
+        .def_readwrite("master_rank", &PyCardConfig::master_rank)
+        .def_readwrite("skill_level", &PyCardConfig::skill_level);
 
     py::class_<PySingleCardConfig>(m, "DeckRecommendSingleCardConfig")
         .def(py::init<>())
@@ -1403,7 +1457,9 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
         .def_readwrite("episode_read", &PySingleCardConfig::episode_read)
         .def_readwrite("master_max", &PySingleCardConfig::master_max)
         .def_readwrite("skill_max", &PySingleCardConfig::skill_max)
-        .def_readwrite("canvas", &PySingleCardConfig::canvas);
+        .def_readwrite("canvas", &PySingleCardConfig::canvas)
+        .def_readwrite("master_rank", &PySingleCardConfig::master_rank)
+        .def_readwrite("skill_level", &PySingleCardConfig::skill_level);
 
     py::class_<PySaOptions>(m, "DeckRecommendSaOptions")
         .def(py::init<>())
@@ -1471,6 +1527,8 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
         .def_readwrite("filter_other_unit", &PyDeckRecommendOptions::filter_other_unit)
         .def_readwrite("fixed_cards", &PyDeckRecommendOptions::fixed_cards)
         .def_readwrite("fixed_characters", &PyDeckRecommendOptions::fixed_characters)
+        .def_readwrite("own_all_bonus_cards", &PyDeckRecommendOptions::own_all_bonus_cards)
+        .def_readwrite("bonus_card_config", &PyDeckRecommendOptions::bonus_card_config)
         .def_readwrite("target_bonus_list", &PyDeckRecommendOptions::target_bonus_list)
         .def_readwrite("skill_reference_choose_strategy", &PyDeckRecommendOptions::skill_reference_choose_strategy)
         .def_readwrite("keep_after_training_state", &PyDeckRecommendOptions::keep_after_training_state)
@@ -1572,6 +1630,8 @@ PyCardConfig cardConfigFromJson(const json& data) {
     readOptional(data, "master_max", config.master_max);
     readOptional(data, "skill_max", config.skill_max);
     readOptional(data, "canvas", config.canvas);
+    readOptional(data, "master_rank", config.master_rank);
+    readOptional(data, "skill_level", config.skill_level);
     return config;
 }
 
@@ -1584,6 +1644,8 @@ PySingleCardConfig singleCardConfigFromJson(const json& data) {
     readOptional(data, "master_max", config.master_max);
     readOptional(data, "skill_max", config.skill_max);
     readOptional(data, "canvas", config.canvas);
+    readOptional(data, "master_rank", config.master_rank);
+    readOptional(data, "skill_level", config.skill_level);
     return config;
 }
 
@@ -1659,6 +1721,8 @@ PyDeckRecommendOptions optionsFromJson(const json& data, const std::string& user
     readOptional(data, "filter_other_unit", options.filter_other_unit);
     readOptional(data, "fixed_cards", options.fixed_cards);
     readOptional(data, "fixed_characters", options.fixed_characters);
+    readOptional(data, "own_all_bonus_cards", options.own_all_bonus_cards);
+    readCardConfig("bonus_card_config", options.bonus_card_config);
     readOptional(data, "target_bonus_list", options.target_bonus_list);
     readOptional(data, "skill_reference_choose_strategy", options.skill_reference_choose_strategy);
     readOptional(data, "keep_after_training_state", options.keep_after_training_state);

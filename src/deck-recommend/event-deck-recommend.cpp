@@ -12,18 +12,22 @@ RecommendResult EventDeckRecommend::recommendEventDeck(int eventId, int liveType
         liveType = Enums::LiveType::cheerful_live;
     }
 
+    auto cfg = config;
     auto userCards = dataProvider.userData->userCards;
+    // 全当期：把本活动的当期卡视为已拥有
+    if (cfg.ownAllBonusCards)
+        baseRecommend.addEventBonusCardsToPool(eventId, userCards, cfg);
     return baseRecommend.recommendHighScoreDeck(userCards,
         this->eventCalculator.getEventPointFunction(
-            liveType, 
+            liveType,
             eventConfig.eventType,
-            config.liveSkillOrder,
-            config.specificSkillOrder,
-            config.multiTeammateScoreUp,
-            config.multiTeammatePower
-        ), 
-        config, 
-        liveType, 
+            cfg.liveSkillOrder,
+            cfg.specificSkillOrder,
+            cfg.multiTeammateScoreUp,
+            cfg.multiTeammatePower
+        ),
+        cfg,
+        liveType,
         eventConfig
     );
 }

@@ -442,6 +442,66 @@ RecommendDeck BaseDeckRecommend::materializeCandidate(
 }
 
 
+UserCard BaseDeckRecommend::makeVirtualUserCard(int cardId) const
+{
+    UserCard uc;
+    uc.cardId = cardId;
+    uc.level = 1;
+    uc.skillLevel = 1;
+    uc.masterRank = 0;
+    uc.specialTrainingStatus = Enums::SpecialTrainingStatus::not_doing;
+
+    auto& c = findOrThrow(this->dataProvider.masterData->cards, [&](const Card& it) {
+        return it.id == cardId;
+    }, [&]() { return "Card not found for cardId=" + std::to_string(cardId); });
+    bool hasSpecialTraining = c.cardRarityType == Enums::CardRarityType::rarity_3
+                            || c.cardRarityType == Enums::CardRarityType::rarity_4;
+    uc.defaultImage = hasSpecialTraining ? Enums::DefaultImage::special_training : Enums::DefaultImage::original;
+
+    for (auto& ep : this->dataProvider.masterData->cardEpisodes)
+        if (ep.cardId == cardId) {
+            UserCardEpisodes uce{};
+            uce.cardEpisodeId = ep.id;
+            uce.scenarioStatus = 0;
+            uc.episodes.push_back(uce);
+        }
+    return uc;
+}
+
+void BaseDeckRecommend::addEventBonusCardsToPool(
+    int eventId,
+    std::vector<UserCard>& userCards,
+    DeckRecommendConfig& config
+) const
+{
+    for (const auto& eventCard : this->dataProvider.masterData->eventCards) {
+        if (eventCard.eventId != eventId || eventCard.bonusRate <= 0)
+            continue;
+        // 显式指定的单卡配置优先，这类卡完全不受全当期配置影响
+        if (config.singleCardConfig.count(eventCard.cardId))
+            continue;
+        config.singleCardConfig[eventCard.cardId] = config.bonusCardConfig;
+
+        const auto& card = findOrThrow(this->dataProvider.masterData->cards, [&](const Card& it) {
+            return it.id == eventCard.cardId;
+        }, [&]() { return "Card not found for cardId=" + std::to_string(eventCard.cardId); });
+
+        // 支援卡组读的是卡牌原始状态而非单卡配置，所以把配置直接套用到卡牌上，
+        // 让当期卡的专精/技能等级在主队伍与支援卡组两侧一致
+        const auto owned = std::find_if(userCards.begin(), userCards.end(), [&](const UserCard& it) {
+            return it.cardId == eventCard.cardId;
+        });
+        if (owned != userCards.end()) {
+            *owned = this->cardService.applyCardConfig(*owned, card, config.bonusCardConfig);
+            continue;
+        }
+        // 未拥有的生成虚拟卡加入卡池
+        userCards.push_back(this->cardService.applyCardConfig(
+            makeVirtualUserCard(eventCard.cardId), card, config.bonusCardConfig
+        ));
+    }
+}
+
 RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
     const std::vector<UserCard> &userCards,
     ScoreFunction scoreFunc,
@@ -461,7 +521,6 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
     auto musicMeta = this->liveCalculator.getMusicMeta(config.musicId, config.musicDiff);
 
     auto areaItemLevels = areaItemService.getAreaItemLevels();
-    auto& cardEpisodes = this->dataProvider.masterData->cardEpisodes;
 
     std::optional<double> scoreUpLimit = std::nullopt;
     // 终章技能加分上限为140
@@ -530,29 +589,9 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
             fixedCards.push_back(*it);
         } else {
             // 找不到的情况下，生成一个初始养成情况的卡牌
-            UserCard uc;
-            uc.cardId = card_id;
-            uc.level = 1;
-            uc.skillLevel = 1;
-            uc.masterRank = 0;
-            uc.specialTrainingStatus = Enums::SpecialTrainingStatus::not_doing;
-            
-            auto& c = findOrThrow(this->dataProvider.masterData->cards, [&](const Card& c) {
-                return c.id == card_id;
-            }, [&]() { return "Card not found for fixed cardId=" + std::to_string(card_id); });
-            bool hasSpecialTraining = c.cardRarityType == Enums::CardRarityType::rarity_3
-                                    || c.cardRarityType == Enums::CardRarityType::rarity_4;
-            uc.defaultImage = hasSpecialTraining ? Enums::DefaultImage::special_training : Enums::DefaultImage::original;
-
-            for (auto& ep : cardEpisodes) 
-                if (ep.cardId == card_id) {
-                    UserCardEpisodes uce{};
-                    uce.cardEpisodeId = ep.id;
-                    uce.scenarioStatus = 0;
-                    uc.episodes.push_back(uce);
-                }
+            auto uc = makeVirtualUserCard(card_id);
             auto card = cardCalculator.batchGetCardDetail(
-                {uc}, config.cardConfig, config.singleCardConfig, 
+                {uc}, config.cardConfig, config.singleCardConfig,
                 eventConfig, areaItemLevels, scoreUpLimit
             );
             if (card.size() > 0) {

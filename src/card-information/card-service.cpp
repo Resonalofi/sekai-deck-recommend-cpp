@@ -15,15 +15,16 @@ std::vector<int> CardService::getCardUnits(const Card &card)
     return cardUnits;
 }
 
-UserCard CardService::applyCardConfig(const UserCard &userCard, const Card &card, const CardConfig &cardConfig)
-{   
+UserCard CardService::applyCardConfig(const UserCard &userCard, const Card &card, const CardConfig &cardConfig) const
+{
     bool rankMax = cardConfig.rankMax;
     bool episodeRead = cardConfig.episodeRead;
     bool masterMax = cardConfig.masterMax;
     bool skillMax = cardConfig.skillMax;
 
     // 都按原样，那就什么都无需调整
-    if (!rankMax && !episodeRead && !masterMax && !skillMax) 
+    if (!rankMax && !episodeRead && !masterMax && !skillMax
+        && !cardConfig.masterRank.has_value() && !cardConfig.skillLevel.has_value())
         return userCard;
 
     auto& cardRarities = dataProvider.masterData->cardRarities;
@@ -51,13 +52,17 @@ UserCard CardService::applyCardConfig(const UserCard &userCard, const Card &card
         }
     }
 
-    // 突破
-    if (masterMax) {
+    // 突破：指定等级优先于满破开关
+    if (cardConfig.masterRank.has_value()) {
+        ret.masterRank = std::clamp(cardConfig.masterRank.value(), 0, 5);
+    } else if (masterMax) {
         ret.masterRank = 5;
     }
 
-    // 技能
-    if (skillMax) {
+    // 技能：指定等级优先于满技能开关
+    if (cardConfig.skillLevel.has_value()) {
+        ret.skillLevel = std::clamp(cardConfig.skillLevel.value(), 1, cardRarity.maxSkillLevel);
+    } else if (skillMax) {
         ret.skillLevel = cardRarity.maxSkillLevel;
     }
 
