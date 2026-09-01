@@ -73,35 +73,6 @@ class DeckRecommendSingleCardConfig:
         ...
 
 
-class DeckRecommendSaOptions:
-    """
-    Simulated annealing options
-    Attributes:
-        run_num (int): Number of simulated annealing runs, default is 20
-        seed (int): Random seed, leave it None or use -1 for random seed, default is None
-        max_iter (int): Maximum iterations, default is 1000000
-        max_no_improve_iter (int): Maximum iterations without improvement, default is 10000
-        time_limit_ms (int): Time limit of each run in milliseconds, default is 200
-        start_temprature (float): Start temperature, default is 1e8
-        cooling_rate (float): Cooling rate, default is 0.999
-        debug (bool): Whether to print debug information, default is False
-    """
-    run_num: Optional[int]
-    seed: Optional[int]
-    max_iter: Optional[int]
-    max_no_improve_iter: Optional[int]
-    time_limit_ms: Optional[int]
-    start_temprature: Optional[float]
-    cooling_rate: Optional[float]
-    debug: Optional[bool]
-
-    def to_dict(self) -> Dict[str, Any]:
-        ...
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'DeckRecommendSaOptions':
-        ...
-
-
 class DeckRecommendGaOptions:
     """
     Genetic algorithm options
@@ -140,7 +111,7 @@ class DeckRecommendOptions:
     Deck recommend options
     Attributes:
         target (str): Target of the recommendation in ["score", "power", "skill", "bonus"], default is "score"
-        algorithm (str): "dfs" for brute force, "sa" for simulated annealing, "ga" for genetic algorithm, default is "ga"
+        algorithm (str): "dfs" for brute force or "ga" for genetic algorithm, default is "ga"
         algorithms (list[str]): run several algorithms and merge their results, overrides algorithm when set
         parallel_algorithms (bool): run the algorithms of `algorithms` in parallel threads instead of one after another, default is False
         region (str): Region in ["jp", "en", "tw", "kr", "cn"]
@@ -181,7 +152,6 @@ class DeckRecommendOptions:
         multi_live_score_up_lower_bound (float): Lower bound of multi live score up, only available when live_type is "multi", default is 0
         skill_order_choose_strategy (str): Strategy for skill order choose in ["average", "max", "min", "specific"], default is "average"
         specific_skill_order (List[int]): Specific skill order starting from 0, only required when skill_order_choose_strategy is "specific", default is None
-        sa_options (DeckRecommendSaOptions): Simulated annealing options
         ga_options (DeckRecommendGaOptions): Genetic algorithm options
     """
     target: Optional[str]
@@ -226,7 +196,6 @@ class DeckRecommendOptions:
     multi_live_score_up_lower_bound: Optional[float]
     skill_order_choose_strategy: Optional[str]
     specific_skill_order: Optional[List[int]]
-    sa_options: Optional[DeckRecommendSaOptions]
     ga_options: Optional[DeckRecommendGaOptions]
 
     def to_dict(self) -> Dict[str, Any]:
@@ -354,7 +323,7 @@ class SekaiDeckRecommend:
     sekai_deck_recommend.update_musicmetas("file/path/of/musicmetas", "jp")
 
     options = DeckRecommendOptions()
-    options.algorithm = "sa"
+    options.algorithm = "ga"
     options.region = "jp"
     options.user_data_file_path = "user/data/file/path"
     options.live_type = "multi"

@@ -61,10 +61,18 @@ bool dfsBonus(
     std::vector<int>& current,
     std::map<int, std::vector<std::vector<int>>>& result,
     std::map<int, bool>& hasBonusCharaCards,
-    std::set<int>& charaVis
+    std::set<int>& charaVis,
+    const std::set<int>& requiredCharacters,
+    const std::set<int>& requiredKeys
 )
 {
     if ((int)current.size() == config.member) {
+        for (const auto characterId : requiredCharacters)
+            if (!charaVis.count(characterId))
+                return targets.size() > 0;
+        for (const auto key : requiredKeys)
+            if (std::find(current.begin(), current.end(), key) == current.end())
+                return targets.size() > 0;
         if (targets.count(currentBonus)) {
             result[currentBonus].push_back(current);
             if (result[currentBonus].size() == config.limit) 
@@ -128,7 +136,8 @@ bool dfsBonus(
         current.push_back(it->first);
 
         bool cont = dfsBonus(config, dfsInfo, targets, 
-            currentBonus + bonus, current, result, hasBonusCharaCards, charaVis);
+            currentBonus + bonus, current, result, hasBonusCharaCards, charaVis,
+            requiredCharacters, requiredKeys);
         if (!cont) return false; 
 
         current.pop_back();
@@ -148,11 +157,10 @@ void BaseDeckRecommend::findTargetBonusCardsDFS(
     int limit, 
     int member, 
     std::optional<int> eventType, 
-    std::optional<int> eventId
+    std::optional<int> eventId,
+    const std::vector<CardDetail>& fixedCards
 )
 {
-    SupportDeckMap emptySupportCards{};
-
     std::vector<int> bonusList = config.bonusList;
     for (auto& x : bonusList) x *= 2;
     std::sort(bonusList.begin(), bonusList.end());
@@ -167,11 +175,18 @@ void BaseDeckRecommend::findTargetBonusCardsDFS(
     // 按照加成*2和角色类型归类
     std::map<int, std::vector<const CardDetail *>> bonusCharaCards;
     std::map<int, bool> hasBonusCharaCards;
+    std::set<int> fixedCardIds{};
+    std::map<int, const CardDetail*> fixedCardByCharacter{};
+    for (const auto& card : fixedCards) {
+        fixedCardIds.insert(card.cardId);
+        fixedCardByCharacter[card.characterId] = &card;
+    }
     for (const auto &card : cardDetails) {
-        if (card.maxEventBonus.has_value() && card.maxEventBonus.value() > 0) {
-            if (std::abs(std::round(card.maxEventBonus.value() * 2) - card.maxEventBonus.value() * 2) > 1e-6)
+        const double eventBonus = card.maxEventBonus.value_or(0.0);
+        if (eventBonus > 0 || fixedCardIds.count(card.cardId)) {
+            if (std::abs(std::round(eventBonus * 2) - eventBonus * 2) > 1e-6)
                 continue;
-            int bonus = std::round(card.maxEventBonus.value() * 2);
+            int bonus = std::round(eventBonus * 2);
             int chara = card.characterId;
             int key = getCharaBonusKey(chara, bonus);
             bonusCharaCards[key].push_back(&card);
@@ -187,6 +202,17 @@ void BaseDeckRecommend::findTargetBonusCardsDFS(
 
     // 剩余的组卡目标
     std::set<int> targets(bonusList.begin(), bonusList.end());
+    std::set<int> requiredCharacters(
+        config.fixedCharacters.begin(), config.fixedCharacters.end()
+    );
+    std::set<int> requiredKeys{};
+    for (const auto& card : fixedCards) {
+        requiredCharacters.insert(card.characterId);
+        requiredKeys.insert(getCharaBonusKey(
+            card.characterId,
+            std::round(card.maxEventBonus.value_or(0.0) * 2)
+        ));
+    }
 
     // 按照不同层级过滤进行分层搜索
     for(auto& filter : bonusFilters) {
@@ -195,33 +221,49 @@ void BaseDeckRecommend::findTargetBonusCardsDFS(
         std::vector<int> current;
         std::map<int, std::vector<std::vector<int>>> result; 
         std::set<int> charaVis; 
-        dfsBonus(config, dfsInfo, targets, 0, current, result, filteredHasBonusCharaCards, charaVis);
+        dfsBonus(
+            config, dfsInfo, targets, 0, current, result,
+            filteredHasBonusCharaCards, charaVis, requiredCharacters, requiredKeys
+        );
 
         // 取卡
         for (auto& [bonus, bonusResult] : result) {
             for (auto &resultKeys : bonusResult) {
-                std::vector<const CardDetail *> deckCards{};
-                for (auto key : resultKeys) 
-                    deckCards.push_back(bonusCharaCards[key].front()); 
-                // 计算卡组详情。实效下限会把全部技能状态过滤掉，此时没有候选，
-                // 与分数目标一样跳过该卡组而不是取空 optional。
-                auto best = getBestPermutation(
-                    deckCalculator, deckCards, emptySupportCards, scoreFunc,
-                    0, eventType, eventId, liveType, config
+                std::vector<int> orderedKeys{};
+                orderedKeys.reserve(resultKeys.size());
+                for (const auto characterId : config.fixedCharacters) {
+                    auto it = std::find_if(
+                        resultKeys.begin(), resultKeys.end(),
+                        [characterId](int key) { return getChara(key) == characterId; }
+                    );
+                    if (it != resultKeys.end())
+                        orderedKeys.push_back(*it);
+                }
+                for (const auto key : resultKeys) {
+                    if (std::find(orderedKeys.begin(), orderedKeys.end(), key) == orderedKeys.end())
+                        orderedKeys.push_back(key);
+                }
+                std::vector<std::vector<const CardDetail*>> cardGroups{};
+                cardGroups.reserve(orderedKeys.size());
+                for (const auto key : orderedKeys) {
+                    auto fixed = fixedCardByCharacter.find(getChara(key));
+                    if (fixed != fixedCardByCharacter.end())
+                        cardGroups.push_back({fixed->second});
+                    else
+                        cardGroups.push_back(bonusCharaCards[key]);
+                }
+                auto deckRes = findBestBonusCardCombination(
+                    liveType, config, cardGroups, scoreFunc, eventType, eventId
                 );
-                if (!best.bestCandidate.has_value())
+                if (!deckRes.has_value())
                     continue;
-                auto deckRes = materializeCandidate(
-                    deckCalculator, deckCards, emptySupportCards,
-                    0, eventType, eventId, config, best.bestCandidate.value()
-                );
                 // 需要验证加成正确
-                if(std::abs(deckRes.eventBonus.value_or(0) * 2 - bonus) < 1e-6)
-                    dfsInfo.update(deckRes, 1e9);
+                if(std::abs(deckRes->eventBonus.value_or(0) * 2 - bonus) < 1e-6)
+                    dfsInfo.update(deckRes.value(), 1e9);
                 else
                     std::cerr << "Warning: Event bonus mismatch, expected "
                             << bonus / 2.0 << ", got " 
-                            << deckRes.eventBonus.value_or(0) << std::endl;
+                            << deckRes->eventBonus.value_or(0) << std::endl;
             }
         }
 

@@ -93,24 +93,6 @@ void BaseDeckRecommend::runRecommendAlgorithm(
 ) {
     const bool isChallengeLive = Enums::LiveType::isChallenge(liveType);
 
-    if (algorithm == RecommendAlgorithm::SA) {
-        // 使用模拟退火
-        long long seed = config.saSeed;
-        if (seed == -1)
-            seed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-
-        auto rng = Rng(seed);
-        for (int i = 0; i < config.saRunCount && !info.isTimeout(); i++) {
-            findBestCardsSA(
-                liveType, config, rng, pool, supportCards, scoreFunc,
-                info,
-                config.limit, isChallengeLive, config.member, honorBonus,
-                eventConfig.eventType, eventConfig.eventId, fixedCards
-            );
-        }
-        return;
-    }
-
     if (algorithm == RecommendAlgorithm::GA) {
         // 使用遗传算法
         long long seed = config.gaSeed;
@@ -442,6 +424,44 @@ RecommendDeck BaseDeckRecommend::materializeCandidate(
 }
 
 
+std::optional<RecommendDeck> BaseDeckRecommend::findBestBonusCardCombination(
+    int liveType,
+    const DeckRecommendConfig& config,
+    const std::vector<std::vector<const CardDetail*>>& cardGroups,
+    const std::function<Score(const DeckScoreDetail&)>& scoreFunc,
+    std::optional<int> eventType,
+    std::optional<int> eventId
+) {
+    SupportDeckMap emptySupportCards{};
+    std::vector<const CardDetail*> deckCards(cardGroups.size());
+    std::optional<RecommendDeck> bestDeck{};
+    const auto search = [&](const auto& self, std::size_t position) -> void {
+        if (position == cardGroups.size()) {
+            auto best = getBestPermutation(
+                deckCalculator, deckCards,
+                emptySupportCards, scoreFunc, 0, eventType, eventId, liveType, config
+            );
+            if (!best.bestCandidate.has_value())
+                return;
+            auto deck = materializeCandidate(
+                deckCalculator, deckCards,
+                emptySupportCards, 0, eventType, eventId,
+                config, best.bestCandidate.value()
+            );
+            if (!bestDeck.has_value() || deck > bestDeck.value())
+                bestDeck = std::move(deck);
+            return;
+        }
+        for (const auto* card : cardGroups[position]) {
+            deckCards[position] = card;
+            self(self, position + 1);
+        }
+    };
+    search(search, 0);
+    return bestDeck;
+}
+
+
 UserCard BaseDeckRecommend::makeVirtualUserCard(int cardId) const
 {
     UserCard uc;
@@ -703,13 +723,15 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
         if (eventConfig.eventType != Enums::EventType::world_bloom) {
             findTargetBonusCardsDFS(
                 liveType, config, cards, sf, calcInfo,
-                config.limit, config.member, eventConfig.eventType, eventConfig.eventId
+                config.limit, config.member, eventConfig.eventType, eventConfig.eventId,
+                fixedCards
             );
         }
         else {
             findWorldBloomTargetBonusCardsDFS(
                 liveType, config, cards, sf, calcInfo,
-                config.limit, config.member, eventConfig.eventType, eventConfig.eventId
+                config.limit, config.member, eventConfig.eventType, eventConfig.eventId,
+                fixedCards
             );
         }
         result.algorithmNs[int(RecommendAlgorithm::DFS)] += steadyNowNs() - bonusStartNs;

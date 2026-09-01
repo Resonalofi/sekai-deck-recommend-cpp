@@ -12,11 +12,10 @@ using Rng = std::mt19937_64;
 
 enum class RecommendAlgorithm {
     DFS,
-    SA,
     GA
 };
 
-inline constexpr size_t recommendAlgorithmCount = 3;
+inline constexpr size_t recommendAlgorithmCount = 2;
 
 // 某一算法在结果里的置位
 inline constexpr uint32_t recommendAlgorithmBit(RecommendAlgorithm algorithm) {
@@ -51,7 +50,7 @@ struct DeckRecommendConfig {
     bool filterOtherUnit = false; 
 
     // 推荐算法
-    RecommendAlgorithm algorithm = RecommendAlgorithm::SA;
+    RecommendAlgorithm algorithm = RecommendAlgorithm::GA;
 
     // 组合算法：非空时忽略 algorithm，依次或并行运行列出的算法并合并结果
     std::vector<RecommendAlgorithm> algorithms = {};
@@ -97,16 +96,6 @@ struct DeckRecommendConfig {
     LiveSkillOrder liveSkillOrder = LiveSkillOrder::best;
     // 指定技能顺序，从0开始（只在liveSkillOrder为specific时有效）
     std::optional<std::vector<int>> specificSkillOrder = std::nullopt;
-
-    // 模拟退火参数
-    int saRunCount = 20; // 运行次数
-    int saSeed = -1; // 随机数种子 -1 代表使用当前时间
-    int saMaxIter = 1000000; // 最大迭代次数
-    int saMaxIterNoImprove = 10000; // 最大无改进迭代次数
-    int saMaxTimeMs = 200; // 最大运行时间
-    double saStartTemperature = 1e8; // 初始温度
-    double saCoolingRate = 0.999; // 冷却速率
-    bool saDebug = false; // 是否输出调试信息
 
     // 遗传算法参数
     int gaSeed = -1;
@@ -195,6 +184,15 @@ public:
         const RecommendCandidate& candidate
     ) const;
 
+    std::optional<RecommendDeck> findBestBonusCardCombination(
+        int liveType,
+        const DeckRecommendConfig& config,
+        const std::vector<std::vector<const CardDetail*>>& cardGroups,
+        const std::function<Score(const DeckScoreDetail&)>& scoreFunc,
+        std::optional<int> eventType,
+        std::optional<int> eventId
+    );
+
     /**
      * 使用递归寻找最佳卡组
      * 栈深度不超过member+1层
@@ -224,37 +222,6 @@ public:
         // 顶层第一张卡的分区：只在最外层生效，递归调用一律传默认值
         int topLevelStride = 1,
         int topLevelOffset = 0
-    );
-
-    /**
-     * 使用模拟退火寻找最佳卡组
-     * （按分数高到低排序）
-     * @param config 配置
-     * @param cardDetails 参与计算的卡牌
-     * @param supportCards 每个对应角色的排序后的支援队伍卡牌
-     * @param scoreFunc 获得分数的公式
-     * @param dfsInfo DFS信息
-     * @param limit 需要推荐的卡组数量（按分数高到低）
-     * @param isChallengeLive 是否挑战Live（人员可重复）
-     * @param member 人数限制（2-5、默认5）
-     * @param honorBonus 称号加成
-     * @param eventType （可选）活动类型
-     */
-    void findBestCardsSA(
-        int liveType,
-        const DeckRecommendConfig& config,
-        Rng& rng,
-        const std::vector<CardDetail>& cardDetails,
-        SupportDeckMap& supportCards,
-        const std::function<Score(const DeckScoreDetail&)>& scoreFunc,
-        RecommendCalcInfo& dfsInfo,
-        int limit = 1,
-        bool isChallengeLive = false,
-        int member = 5,
-        int honorBonus = 0,
-        std::optional<int> eventType = std::nullopt,
-        std::optional<int> eventId = std::nullopt,
-        const std::vector<CardDetail>& fixedCards = {}
     );
 
     /**
@@ -306,7 +273,8 @@ public:
         int limit = 1,
         int member = 5,
         std::optional<int> eventType = std::nullopt,
-        std::optional<int> eventId = std::nullopt
+        std::optional<int> eventId = std::nullopt,
+        const std::vector<CardDetail>& fixedCards = {}
     );
 
     /**
@@ -327,7 +295,8 @@ public:
         int limit = 1,
         int member = 5,
         std::optional<int> eventType = std::nullopt,
-        std::optional<int> eventId = std::nullopt
+        std::optional<int> eventId = std::nullopt,
+        const std::vector<CardDetail>& fixedCards = {}
     );
 
     /**
