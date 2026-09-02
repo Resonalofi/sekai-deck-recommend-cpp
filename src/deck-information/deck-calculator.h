@@ -21,7 +21,7 @@ struct DeckBonusInfo {
 
 struct SupportDeckBonus {
     double bonus;
-    std::vector<CardDetail> cards;
+    std::vector<SupportDeckCard> cards;
 };
 
 struct DeckPowerCalculation {

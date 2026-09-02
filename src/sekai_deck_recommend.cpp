@@ -1,6 +1,7 @@
 #include "deck-recommend/event-deck-recommend.h"
 #include "deck-recommend/challenge-live-deck-recommend.h"
 #include "deck-recommend/mysekai-deck-recommend.h"
+#include "deck-recommend/deck-simulation.h"
 #include "data-provider/static-data.h"
 
 #include <algorithm>
@@ -117,6 +118,204 @@ static const std::set<std::string> VALID_SKILL_ORDER_CHOOSE_STRATEGIES = {
     "min",
     "specific",
 };
+
+#ifdef SEKAI_DECK_RECOMMEND_PYTHON
+static json jsonFromPyObject(const py::handle& value) {
+    if (value.is_none())
+        return nullptr;
+    if (py::isinstance<py::bool_>(value))
+        return value.cast<bool>();
+    if (py::isinstance<py::int_>(value))
+        return value.cast<long long>();
+    if (py::isinstance<py::float_>(value))
+        return value.cast<double>();
+    if (py::isinstance<py::str>(value))
+        return value.cast<std::string>();
+    if (py::isinstance<py::dict>(value)) {
+        json result = json::object();
+        for (const auto& item : value.cast<py::dict>()) {
+            std::string key;
+            if (py::isinstance<py::str>(item.first))
+                key = item.first.cast<std::string>();
+            else
+                key = std::to_string(item.first.cast<int>());
+            result[key] = jsonFromPyObject(item.second);
+        }
+        return result;
+    }
+    if (py::isinstance<py::list>(value) || py::isinstance<py::tuple>(value)) {
+        json result = json::array();
+        for (const auto& item : py::reinterpret_borrow<py::iterable>(value))
+            result.push_back(jsonFromPyObject(item));
+        return result;
+    }
+    throw std::invalid_argument("simulation config contains unsupported Python value");
+}
+#endif
+
+static int configKeyToInt(const std::string& key, const std::string& field) {
+    if (key.empty())
+        throw std::invalid_argument(field + " contains an empty key");
+    int value = 0;
+    for (const char c : key) {
+        if (c < '0' || c > '9')
+            throw std::invalid_argument(field + " contains a non-numeric key: " + key);
+        value = value * 10 + (c - '0');
+    }
+    return value;
+}
+
+static AreaItemSimulationMode parseAreaItemSimulationMode(const std::string& mode) {
+    if (mode == "current") return AreaItemSimulationMode::Current;
+    if (mode == "empty") return AreaItemSimulationMode::Empty;
+    if (mode == "max") return AreaItemSimulationMode::Max;
+    if (mode == "uniform") return AreaItemSimulationMode::Uniform;
+    if (mode == "minimum") return AreaItemSimulationMode::Minimum;
+    throw std::invalid_argument("Invalid area_item_config.mode: " + mode);
+}
+
+static CharacterRankSimulationMode parseCharacterRankSimulationMode(const std::string& mode) {
+    if (mode == "current") return CharacterRankSimulationMode::Current;
+    if (mode == "max") return CharacterRankSimulationMode::Max;
+    if (mode == "fixed") return CharacterRankSimulationMode::Fixed;
+    throw std::invalid_argument("Invalid character_rank_config.mode: " + mode);
+}
+
+static AreaItemSimulationConfig areaItemConfigFromJson(const json& data) {
+    if (!data.is_object())
+        throw std::invalid_argument("area_item_config must be an object");
+    AreaItemSimulationConfig result;
+    result.mode = parseAreaItemSimulationMode(data.value("mode", "current"));
+    if (data.contains("level") && !data.at("level").is_null())
+        result.level = data.at("level").get<int>();
+    if (const auto items = data.find("items"); items != data.end()) {
+        if (!items->is_object())
+            throw std::invalid_argument("area_item_config.items must be an object");
+        for (const auto& [key, value] : items->items())
+            result.itemLevels[configKeyToInt(key, "area_item_config.items")] = value.get<int>();
+    }
+    else {
+        // 允许直接使用 {"12": 15, "13": 8} 作为逐家具配置。
+        for (const auto& [key, value] : data.items()) {
+            if (key == "mode" || key == "level")
+                continue;
+            result.itemLevels[configKeyToInt(key, "area_item_config")] = value.get<int>();
+        }
+    }
+    return result;
+}
+
+static CharacterRankSimulationConfig characterRankConfigFromJson(const json& data) {
+    if (!data.is_object())
+        throw std::invalid_argument("character_rank_config must be an object");
+    CharacterRankSimulationConfig result;
+    result.mode = parseCharacterRankSimulationMode(data.value("mode", "current"));
+    if (data.contains("level") && !data.at("level").is_null())
+        result.level = data.at("level").get<int>();
+    if (const auto overrides = data.find("overrides"); overrides != data.end()) {
+        if (!overrides->is_object())
+            throw std::invalid_argument("character_rank_config.overrides must be an object");
+        for (const auto& [key, value] : overrides->items())
+            result.overrides[configKeyToInt(key, "character_rank_config.overrides")] = value.get<int>();
+    }
+    return result;
+}
+
+static HonorSimulationConfig honorConfigFromJson(const json& data) {
+    if (!data.is_object())
+        throw std::invalid_argument("honor_config must be an object");
+    HonorSimulationConfig result;
+    const auto mode = data.value("mode", "current");
+    if (mode == "current") result.useCurrent = true;
+    else if (mode == "none") result.useCurrent = false;
+    else throw std::invalid_argument("Invalid honor_config.mode: " + mode);
+    if (const auto overrides = data.find("overrides"); overrides != data.end()) {
+        if (!overrides->is_object())
+            throw std::invalid_argument("honor_config.overrides must be an object");
+        for (const auto& [key, value] : overrides->items()) {
+            if (!value.is_object())
+                throw std::invalid_argument("honor_config.overrides values must be objects");
+            HonorSimulationOverride item;
+            if (value.contains("enabled") && !value.at("enabled").is_null())
+                item.enabled = value.at("enabled").get<bool>();
+            if (value.contains("level") && !value.at("level").is_null())
+                item.level = value.at("level").get<int>();
+            result.overrides[configKeyToInt(key, "honor_config.overrides")] = item;
+        }
+    }
+    return result;
+}
+
+static MysekaiSimulationConfig mysekaiConfigFromJson(const json& data) {
+    if (!data.is_object())
+        throw std::invalid_argument("mysekai_config must be an object");
+    MysekaiSimulationConfig result;
+    if (const auto fixtures = data.find("fixtures"); fixtures != data.end()) {
+        if (!fixtures->is_object())
+            throw std::invalid_argument("mysekai_config.fixtures must be an object");
+        MysekaiFixtureSimulationConfig config;
+        const auto mode = fixtures->value("mode", "current");
+        if (mode == "current") config.useCurrent = true;
+        else if (mode == "none") config.useCurrent = false;
+        else throw std::invalid_argument("Invalid mysekai_config.fixtures.mode: " + mode);
+        if (const auto rates = fixtures->find("rates"); rates != fixtures->end()) {
+            if (!rates->is_object())
+                throw std::invalid_argument("mysekai_config.fixtures.rates must be an object");
+            for (const auto& [key, value] : rates->items())
+                config.bonusRatePercent[configKeyToInt(key, "mysekai_config.fixtures.rates")] = value.get<double>();
+        }
+        result.fixtures = std::move(config);
+    }
+    if (const auto gates = data.find("gates"); gates != data.end()) {
+        if (!gates->is_object())
+            throw std::invalid_argument("mysekai_config.gates must be an object");
+        MysekaiGateSimulationConfig config;
+        const auto mode = gates->value("mode", "current");
+        if (mode == "current") config.useCurrent = true;
+        else if (mode == "none") config.useCurrent = false;
+        else throw std::invalid_argument("Invalid mysekai_config.gates.mode: " + mode);
+        if (const auto overrides = gates->find("overrides"); overrides != gates->end()) {
+            if (!overrides->is_object())
+                throw std::invalid_argument("mysekai_config.gates.overrides must be an object");
+            for (const auto& [key, value] : overrides->items()) {
+                if (!value.is_object())
+                    throw std::invalid_argument("mysekai_config.gates.overrides values must be objects");
+                MysekaiGateSimulationOverride item;
+                if (value.contains("enabled") && !value.at("enabled").is_null())
+                    item.enabled = value.at("enabled").get<bool>();
+                if (value.contains("level") && !value.at("level").is_null())
+                    item.level = value.at("level").get<int>();
+                config.overrides[configKeyToInt(key, "mysekai_config.gates.overrides")] = item;
+            }
+        }
+        result.gates = std::move(config);
+    }
+    if (const auto canvas = data.find("canvas"); canvas != data.end()) {
+        if (!canvas->is_object())
+            throw std::invalid_argument("mysekai_config.canvas must be an object");
+        MysekaiCanvasSimulationConfig config;
+        const auto mode = canvas->value("mode", "current");
+        if (mode == "current") config.useCurrent = true;
+        else if (mode == "none") config.useCurrent = false;
+        else throw std::invalid_argument("Invalid mysekai_config.canvas.mode: " + mode);
+        for (const auto* key : {"include", "exclude"}) {
+            const auto values = canvas->find(key);
+            if (values == canvas->end()) continue;
+            if (!values->is_array())
+                throw std::invalid_argument(std::string("mysekai_config.canvas.") + key + " must be an array");
+            for (const auto& value : *values) {
+                const int cardId = value.get<int>();
+                if (key == std::string("include")) config.include.insert(cardId);
+                else config.exclude.insert(cardId);
+            }
+        }
+        for (const auto cardId : config.include)
+            if (config.exclude.count(cardId))
+                throw std::invalid_argument("mysekai_config.canvas include/exclude overlap for cardId=" + std::to_string(cardId));
+        result.canvas = std::move(config);
+    }
+    return result;
+}
 
 // 用户数据缓存
 struct PyUserData {
@@ -296,6 +495,18 @@ struct PyDeckRecommendOptions {
     std::optional<PyGaOptions> ga_options;
 
 #ifdef SEKAI_DECK_RECOMMEND_PYTHON
+    std::optional<py::dict> area_item_config;
+    std::optional<py::dict> character_rank_config;
+    std::optional<py::dict> honor_config;
+    std::optional<py::dict> mysekai_config;
+#else
+    std::optional<json> area_item_config;
+    std::optional<json> character_rank_config;
+    std::optional<json> honor_config;
+    std::optional<json> mysekai_config;
+#endif
+
+#ifdef SEKAI_DECK_RECOMMEND_PYTHON
     py::dict to_dict() const {
         if (user_data.has_value()) 
             throw std::runtime_error("Cannot be converted to dict when user_data is set.");
@@ -372,6 +583,16 @@ struct PyDeckRecommendOptions {
         
         if (ga_options.has_value())
             result["ga_options"] = ga_options->to_dict();
+#ifdef SEKAI_DECK_RECOMMEND_PYTHON
+        if (area_item_config.has_value())
+            result["area_item_config"] = area_item_config.value();
+        if (character_rank_config.has_value())
+            result["character_rank_config"] = character_rank_config.value();
+        if (honor_config.has_value())
+            result["honor_config"] = honor_config.value();
+        if (mysekai_config.has_value())
+            result["mysekai_config"] = mysekai_config.value();
+#endif
         return result;
     }
 
@@ -451,6 +672,14 @@ struct PyDeckRecommendOptions {
 
         if (dict.contains("ga_options"))
             options.ga_options = PyGaOptions::from_dict(dict["ga_options"].cast<py::dict>());
+        if (dict.contains("area_item_config"))
+            options.area_item_config = dict["area_item_config"].cast<py::dict>();
+        if (dict.contains("character_rank_config"))
+            options.character_rank_config = dict["character_rank_config"].cast<py::dict>();
+        if (dict.contains("honor_config"))
+            options.honor_config = dict["honor_config"].cast<py::dict>();
+        if (dict.contains("mysekai_config"))
+            options.mysekai_config = dict["mysekai_config"].cast<py::dict>();
         return options;
     }
 #endif
@@ -458,28 +687,44 @@ struct PyDeckRecommendOptions {
 
 // 单个Card推荐结果
 struct PyRecommendCard {
-    int card_id;
-    int total_power;
-    int base_power;
-    double event_bonus_rate;
-    int master_rank;
-    int level;
-    int skill_level;
-    int skill_score_up;
-    int skill_life_recovery;
-    bool episode1_read;
-    bool episode2_read;
-    bool after_training;
+    int card_id = 0;
+    int character_id = 0;
+    int card_rarity_type = 0;
+    int attr = 0;
+    int total_power = 0;
+    int base_power = 0;
+    int area_item_bonus_power = 0;
+    int character_bonus_power = 0;
+    int fixture_bonus_power = 0;
+    int gate_bonus_power = 0;
+    double event_bonus_rate = 0.0;
+    double support_deck_bonus_rate = 0.0;
+    int master_rank = 0;
+    int level = 0;
+    int skill_level = 0;
+    int skill_score_up = 0;
+    int skill_life_recovery = 0;
+    bool episode1_read = false;
+    bool episode2_read = false;
+    bool after_training = false;
     std::string default_image;
-    bool has_canvas_bonus;
+    bool has_canvas_bonus = false;
 
 #ifdef SEKAI_DECK_RECOMMEND_PYTHON
     py::dict to_dict() const {
         py::dict result;
         result["card_id"] = card_id;
+        result["character_id"] = character_id;
+        result["card_rarity_type"] = card_rarity_type;
+        result["attr"] = attr;
         result["total_power"] = total_power;
         result["base_power"] = base_power;
+        result["area_item_bonus_power"] = area_item_bonus_power;
+        result["character_bonus_power"] = character_bonus_power;
+        result["fixture_bonus_power"] = fixture_bonus_power;
+        result["gate_bonus_power"] = gate_bonus_power;
         result["event_bonus_rate"] = event_bonus_rate;
+        result["support_deck_bonus_rate"] = support_deck_bonus_rate;
         result["master_rank"] = master_rank;
         result["level"] = level;
         result["skill_level"] = skill_level;
@@ -495,9 +740,18 @@ struct PyRecommendCard {
     static PyRecommendCard from_dict(const py::dict& dict) {
         PyRecommendCard card;
         card.card_id = dict["card_id"].cast<int>();
+        card.character_id = dict.contains("character_id") ? dict["character_id"].cast<int>() : 0;
+        card.card_rarity_type = dict.contains("card_rarity_type") ? dict["card_rarity_type"].cast<int>() : 0;
+        card.attr = dict.contains("attr") ? dict["attr"].cast<int>() : 0;
         card.total_power = dict["total_power"].cast<int>();
         card.base_power = dict["base_power"].cast<int>();
+        card.area_item_bonus_power = dict.contains("area_item_bonus_power") ? dict["area_item_bonus_power"].cast<int>() : 0;
+        card.character_bonus_power = dict.contains("character_bonus_power") ? dict["character_bonus_power"].cast<int>() : 0;
+        card.fixture_bonus_power = dict.contains("fixture_bonus_power") ? dict["fixture_bonus_power"].cast<int>() : 0;
+        card.gate_bonus_power = dict.contains("gate_bonus_power") ? dict["gate_bonus_power"].cast<int>() : 0;
         card.event_bonus_rate = dict["event_bonus_rate"].cast<double>();
+        card.support_deck_bonus_rate = dict.contains("support_deck_bonus_rate")
+            ? dict["support_deck_bonus_rate"].cast<double>() : 0.0;
         card.master_rank = dict["master_rank"].cast<int>();
         card.level = dict["level"].cast<int>();
         card.skill_level = dict["skill_level"].cast<int>();
@@ -513,22 +767,55 @@ struct PyRecommendCard {
 #endif
 };
 
+struct PyRecommendSupportDeck {
+    int character_id = 0;
+    int capacity = 0;
+    double bonus_rate = 0.0;
+    std::vector<PyRecommendCard> cards;
+
+#ifdef SEKAI_DECK_RECOMMEND_PYTHON
+    py::dict to_dict() const {
+        py::dict result;
+        result["character_id"] = character_id;
+        result["capacity"] = capacity;
+        result["bonus_rate"] = bonus_rate;
+        py::list card_list;
+        for (const auto& card : cards)
+            card_list.append(card.to_dict());
+        result["cards"] = card_list;
+        return result;
+    }
+    static PyRecommendSupportDeck from_dict(const py::dict& dict) {
+        PyRecommendSupportDeck result;
+        result.character_id = dict["character_id"].cast<int>();
+        result.capacity = dict["capacity"].cast<int>();
+        result.bonus_rate = dict["bonus_rate"].cast<double>();
+        for (const auto& item : dict["cards"].cast<py::list>())
+            result.cards.push_back(PyRecommendCard::from_dict(item.cast<py::dict>()));
+        return result;
+    }
+#endif
+};
+
 // 单个Deck推荐结果
 struct PyRecommendDeck {
-    int score;
-    int live_score;
-    int mysekai_event_point;
-    int total_power;
-    int base_power;
-    int area_item_bonus_power;
-    int character_bonus_power;
-    int honor_bonus_power;
-    int fixture_bonus_power;
-    int gate_bonus_power;
-    double event_bonus_rate;
-    double support_deck_bonus_rate;
-    double multi_live_score_up;
+    int score = 0;
+    int live_score = 0;
+    int mysekai_event_point = 0;
+    int total_power = 0;
+    int base_power = 0;
+    int area_item_bonus_power = 0;
+    int character_bonus_power = 0;
+    int honor_bonus_power = 0;
+    int fixture_bonus_power = 0;
+    int gate_bonus_power = 0;
+    double event_bonus_rate = 0.0;
+    double support_deck_bonus_rate = 0.0;
+    double multi_live_score_up = 0.0;
     std::vector<PyRecommendCard> cards;
+    std::optional<PyRecommendSupportDeck> wl_sub_deck;
+    double event_diff_attr_bonus_rate = 0.0;
+    double event_shuffle_unit_bonus_rate = 0.0;
     // 找出这一队的算法，按请求里给出的算法顺序排列
     std::vector<std::string> algorithms;
 
@@ -549,12 +836,16 @@ struct PyRecommendDeck {
         result["support_deck_bonus_rate"] = support_deck_bonus_rate;
         result["multi_live_score_up"] = multi_live_score_up;
         result["algorithms"] = algorithms;
+        result["event_diff_attr_bonus_rate"] = event_diff_attr_bonus_rate;
+        result["event_shuffle_unit_bonus_rate"] = event_shuffle_unit_bonus_rate;
 
         py::list card_list;
         for (const auto& card : cards) {
             card_list.append(card.to_dict());
         }
         result["cards"] = card_list;
+        if (wl_sub_deck.has_value())
+            result["wl_sub_deck"] = wl_sub_deck->to_dict();
 
         return result;
     }
@@ -574,11 +865,19 @@ struct PyRecommendDeck {
         deck.support_deck_bonus_rate = dict["support_deck_bonus_rate"].cast<double>();
         deck.multi_live_score_up = dict["multi_live_score_up"].cast<double>();
         deck.algorithms = dict["algorithms"].cast<std::vector<std::string>>();
+        deck.event_diff_attr_bonus_rate = dict.contains("event_diff_attr_bonus_rate")
+            ? dict["event_diff_attr_bonus_rate"].cast<double>() : 0.0;
+        deck.event_shuffle_unit_bonus_rate = dict.contains("event_shuffle_unit_bonus_rate")
+            ? dict["event_shuffle_unit_bonus_rate"].cast<double>() : 0.0;
 
         auto card_list = dict["cards"].cast<py::list>();
         for (const auto& item : card_list) {
             deck.cards.push_back(PyRecommendCard::from_dict(item.cast<py::dict>()));
         }
+        if (dict.contains("wl_sub_deck") && !dict["wl_sub_deck"].is_none())
+            deck.wl_sub_deck = PyRecommendSupportDeck::from_dict(
+                dict["wl_sub_deck"].cast<py::dict>()
+            );
         
         return deck;
     }
@@ -645,8 +944,16 @@ class SekaiDeckRecommend {
 
         // user data
         auto userdata = std::make_shared<UserData>();
-        if (pyoptions.user_data.has_value())
+        if (pyoptions.user_data.has_value()) {
+#ifdef SEKAI_DECK_RECOMMEND_PYTHON
+            // Python caller may reuse DeckRecommendUserData across calls. Copy once at
+            // the request boundary, then apply all explicit overrides directly to it.
+            userdata = std::make_shared<UserData>(*pyoptions.user_data.value().user_data);
+#else
+            // Native JSON constructs a fresh UserData for every request.
             userdata = pyoptions.user_data.value().user_data;
+#endif
+        }
         else if (pyoptions.user_data_file_path.has_value())
             userdata->loadFromFile(pyoptions.user_data_file_path.value());
         else if (pyoptions.user_data_str.has_value()) 
@@ -1104,6 +1411,45 @@ class SekaiDeckRecommend {
                     config.gaNoImproveIterToMutationRate = ga_options.no_improve_iter_to_mutation_rate.value();
             }
 
+            std::optional<AreaItemSimulationConfig> areaItemConfig;
+            std::optional<CharacterRankSimulationConfig> characterRankConfig;
+            std::optional<HonorSimulationConfig> honorConfig;
+            std::optional<MysekaiSimulationConfig> mysekaiConfig;
+#ifdef SEKAI_DECK_RECOMMEND_PYTHON
+            if (pyoptions.area_item_config.has_value())
+                areaItemConfig = areaItemConfigFromJson(
+                    jsonFromPyObject(pyoptions.area_item_config.value())
+                );
+            if (pyoptions.character_rank_config.has_value())
+                characterRankConfig = characterRankConfigFromJson(
+                    jsonFromPyObject(pyoptions.character_rank_config.value())
+                );
+            if (pyoptions.honor_config.has_value())
+                honorConfig = honorConfigFromJson(
+                    jsonFromPyObject(pyoptions.honor_config.value())
+                );
+            if (pyoptions.mysekai_config.has_value())
+                mysekaiConfig = mysekaiConfigFromJson(
+                    jsonFromPyObject(pyoptions.mysekai_config.value())
+                );
+#else
+            if (pyoptions.area_item_config.has_value())
+                areaItemConfig = areaItemConfigFromJson(*pyoptions.area_item_config);
+            if (pyoptions.character_rank_config.has_value())
+                characterRankConfig = characterRankConfigFromJson(*pyoptions.character_rank_config);
+            if (pyoptions.honor_config.has_value())
+                honorConfig = honorConfigFromJson(*pyoptions.honor_config);
+            if (pyoptions.mysekai_config.has_value())
+                mysekaiConfig = mysekaiConfigFromJson(*pyoptions.mysekai_config);
+#endif
+            applyUserDataOverrides(
+                *options.dataProvider.userData,
+                *options.dataProvider.masterData,
+                areaItemConfig,
+                characterRankConfig,
+                honorConfig,
+                mysekaiConfig
+            );
             options.config = config;
         }
         return options;
@@ -1133,6 +1479,10 @@ class SekaiDeckRecommend {
             py_deck.event_bonus_rate = deck.eventBonus.value_or(0);
             py_deck.support_deck_bonus_rate = deck.supportDeckBonus.value_or(0);
             py_deck.multi_live_score_up = deck.multiLiveScoreUp;
+            if (deck.eventBonusDetail.has_value()) {
+                py_deck.event_diff_attr_bonus_rate = deck.eventBonusDetail->diffAttrBonus;
+                py_deck.event_shuffle_unit_bonus_rate = deck.eventBonusDetail->shuffleUnitBonus;
+            }
             // 按请求给出的算法顺序列出找到这一队的算法
             for (const auto algorithm : requestedAlgorithms)
                 if (deck.algorithmMask & recommendAlgorithmBit(algorithm))
@@ -1141,9 +1491,17 @@ class SekaiDeckRecommend {
             for (const auto& card : deck.cards) {
                 auto py_card = PyRecommendCard();
                 py_card.card_id = card.cardId;
+                py_card.character_id = card.characterId;
+                py_card.card_rarity_type = card.cardRarityType;
+                py_card.attr = card.attr;
                 py_card.total_power = card.power.total;
                 py_card.base_power = card.power.base;
+                py_card.area_item_bonus_power = card.power.areaItemBonus;
+                py_card.character_bonus_power = card.power.characterBonus;
+                py_card.fixture_bonus_power = card.power.fixtureBonus;
+                py_card.gate_bonus_power = card.power.gateBonus;
                 py_card.event_bonus_rate = card.eventBonus.value_or(0);
+                py_card.support_deck_bonus_rate = card.supportDeckBonus;
                 py_card.master_rank = card.masterRank;
                 py_card.level = card.level;
                 py_card.skill_level = card.skillLevel;
@@ -1155,6 +1513,40 @@ class SekaiDeckRecommend {
                 py_card.default_image = mappedEnumToString(EnumMap::defaultImage, card.defaultImage);
                 py_card.has_canvas_bonus = card.hasCanvasBonus;
                 py_deck.cards.push_back(py_card);
+            }
+
+            if (deck.supportDeck.has_value()) {
+                PyRecommendSupportDeck py_support;
+                py_support.character_id = deck.supportDeck->characterId;
+                py_support.capacity = deck.supportDeck->capacity;
+                py_support.bonus_rate = deck.supportDeck->bonus;
+                for (const auto& card : deck.supportDeck->cards) {
+                    PyRecommendCard py_card;
+                    py_card.card_id = card.cardId;
+                    py_card.character_id = card.characterId;
+                    py_card.card_rarity_type = card.cardRarityType;
+                    py_card.attr = card.attr;
+                    py_card.total_power = card.totalPower;
+                    py_card.base_power = card.basePower;
+                    py_card.area_item_bonus_power = card.areaItemBonusPower;
+                    py_card.character_bonus_power = card.characterBonusPower;
+                    py_card.fixture_bonus_power = card.fixtureBonusPower;
+                    py_card.gate_bonus_power = card.gateBonusPower;
+                    py_card.event_bonus_rate = card.eventBonus;
+                    py_card.support_deck_bonus_rate = card.supportDeckBonus;
+                    py_card.master_rank = card.masterRank;
+                    py_card.level = card.level;
+                    py_card.skill_level = card.skillLevel;
+                    py_card.skill_score_up = static_cast<int>(card.skill.scoreUp);
+                    py_card.skill_life_recovery = static_cast<int>(card.skill.lifeRecovery);
+                    py_card.episode1_read = card.episode1Read;
+                    py_card.episode2_read = card.episode2Read;
+                    py_card.after_training = card.afterTraining;
+                    py_card.default_image = mappedEnumToString(EnumMap::defaultImage, card.defaultImage);
+                    py_card.has_canvas_bonus = card.hasCanvasBonus;
+                    py_support.cards.push_back(std::move(py_card));
+                }
+                py_deck.wl_sub_deck = std::move(py_support);
             }
 
             ret.decks.push_back(py_deck);
@@ -1421,18 +1813,30 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
         .def_readwrite("best_skill_as_leader", &PyDeckRecommendOptions::best_skill_as_leader)
         .def_readwrite("multi_live_score_up_lower_bound", &PyDeckRecommendOptions::multi_live_score_up_lower_bound)
         .def_readwrite("skill_order_choose_strategy", &PyDeckRecommendOptions::skill_order_choose_strategy)
-        .def_readwrite("specific_skill_order", &PyDeckRecommendOptions::specific_skill_order)
-        .def_readwrite("ga_options", &PyDeckRecommendOptions::ga_options);
+         .def_readwrite("specific_skill_order", &PyDeckRecommendOptions::specific_skill_order)
+         .def_readwrite("ga_options", &PyDeckRecommendOptions::ga_options)
+         .def_readwrite("area_item_config", &PyDeckRecommendOptions::area_item_config)
+         .def_readwrite("character_rank_config", &PyDeckRecommendOptions::character_rank_config)
+         .def_readwrite("honor_config", &PyDeckRecommendOptions::honor_config)
+         .def_readwrite("mysekai_config", &PyDeckRecommendOptions::mysekai_config);
 
     py::class_<PyRecommendCard>(m, "RecommendCard")
         .def(py::init<>())
         .def(py::init<const PyRecommendCard&>())
         .def("to_dict", &PyRecommendCard::to_dict)
-        .def_static("from_dict", &PyRecommendCard::from_dict)
-        .def_readwrite("card_id", &PyRecommendCard::card_id)
-        .def_readwrite("total_power", &PyRecommendCard::total_power)
-        .def_readwrite("base_power", &PyRecommendCard::base_power)
-        .def_readwrite("event_bonus_rate", &PyRecommendCard::event_bonus_rate)
+         .def_static("from_dict", &PyRecommendCard::from_dict)
+         .def_readwrite("card_id", &PyRecommendCard::card_id)
+         .def_readwrite("character_id", &PyRecommendCard::character_id)
+         .def_readwrite("card_rarity_type", &PyRecommendCard::card_rarity_type)
+         .def_readwrite("attr", &PyRecommendCard::attr)
+         .def_readwrite("total_power", &PyRecommendCard::total_power)
+         .def_readwrite("base_power", &PyRecommendCard::base_power)
+         .def_readwrite("area_item_bonus_power", &PyRecommendCard::area_item_bonus_power)
+         .def_readwrite("character_bonus_power", &PyRecommendCard::character_bonus_power)
+         .def_readwrite("fixture_bonus_power", &PyRecommendCard::fixture_bonus_power)
+         .def_readwrite("gate_bonus_power", &PyRecommendCard::gate_bonus_power)
+         .def_readwrite("event_bonus_rate", &PyRecommendCard::event_bonus_rate)
+         .def_readwrite("support_deck_bonus_rate", &PyRecommendCard::support_deck_bonus_rate)
         .def_readwrite("master_rank", &PyRecommendCard::master_rank)
         .def_readwrite("level", &PyRecommendCard::level)
         .def_readwrite("skill_level", &PyRecommendCard::skill_level)
@@ -1441,8 +1845,18 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
         .def_readwrite("episode1_read", &PyRecommendCard::episode1_read)
         .def_readwrite("episode2_read", &PyRecommendCard::episode2_read)
         .def_readwrite("after_training", &PyRecommendCard::after_training)
-        .def_readwrite("default_image", &PyRecommendCard::default_image)
-        .def_readwrite("has_canvas_bonus", &PyRecommendCard::has_canvas_bonus);
+         .def_readwrite("default_image", &PyRecommendCard::default_image)
+         .def_readwrite("has_canvas_bonus", &PyRecommendCard::has_canvas_bonus);
+
+    py::class_<PyRecommendSupportDeck>(m, "RecommendSupportDeck")
+        .def(py::init<>())
+        .def(py::init<const PyRecommendSupportDeck&>())
+        .def("to_dict", &PyRecommendSupportDeck::to_dict)
+        .def_static("from_dict", &PyRecommendSupportDeck::from_dict)
+        .def_readwrite("character_id", &PyRecommendSupportDeck::character_id)
+        .def_readwrite("capacity", &PyRecommendSupportDeck::capacity)
+        .def_readwrite("bonus_rate", &PyRecommendSupportDeck::bonus_rate)
+        .def_readwrite("cards", &PyRecommendSupportDeck::cards);
 
     py::class_<PyRecommendDeck>(m, "RecommendDeck")
         .def(py::init<>())
@@ -1461,8 +1875,11 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
         .def_readwrite("gate_bonus_power", &PyRecommendDeck::gate_bonus_power)
         .def_readwrite("event_bonus_rate", &PyRecommendDeck::event_bonus_rate)
         .def_readwrite("support_deck_bonus_rate", &PyRecommendDeck::support_deck_bonus_rate)
-        .def_readwrite("multi_live_score_up", &PyRecommendDeck::multi_live_score_up)
-        .def_readwrite("algorithms", &PyRecommendDeck::algorithms)
+         .def_readwrite("multi_live_score_up", &PyRecommendDeck::multi_live_score_up)
+         .def_readwrite("event_diff_attr_bonus_rate", &PyRecommendDeck::event_diff_attr_bonus_rate)
+         .def_readwrite("event_shuffle_unit_bonus_rate", &PyRecommendDeck::event_shuffle_unit_bonus_rate)
+         .def_readwrite("wl_sub_deck", &PyRecommendDeck::wl_sub_deck)
+         .def_readwrite("algorithms", &PyRecommendDeck::algorithms)
         .def_readwrite("cards", &PyRecommendDeck::cards);
     
     py::class_<PyDeckRecommendResult>(m, "DeckRecommendResult")
@@ -1599,6 +2016,15 @@ PyDeckRecommendOptions optionsFromJson(const json& data, const std::string& user
     readOptional(data, "skill_order_choose_strategy", options.skill_order_choose_strategy);
     readOptional(data, "specific_skill_order", options.specific_skill_order);
 
+    if (const auto it = data.find("area_item_config"); it != data.end() && !it->is_null())
+        options.area_item_config = *it;
+    if (const auto it = data.find("character_rank_config"); it != data.end() && !it->is_null())
+        options.character_rank_config = *it;
+    if (const auto it = data.find("honor_config"); it != data.end() && !it->is_null())
+        options.honor_config = *it;
+    if (const auto it = data.find("mysekai_config"); it != data.end() && !it->is_null())
+        options.mysekai_config = *it;
+
     const auto gaOptions = data.find("ga_options");
     if (gaOptions != data.end() && !gaOptions->is_null())
         options.ga_options = gaOptionsFromJson(*gaOptions);
@@ -1621,9 +2047,17 @@ json resultToJson(const PyDeckRecommendResult& result) {
         for (const auto& card : deck.cards) {
             cards.push_back({
                 {"card_id", card.card_id},
+                {"character_id", card.character_id},
+                {"card_rarity_type", card.card_rarity_type},
+                {"attr", card.attr},
                 {"total_power", card.total_power},
                 {"base_power", card.base_power},
+                {"area_item_bonus_power", card.area_item_bonus_power},
+                {"character_bonus_power", card.character_bonus_power},
+                {"fixture_bonus_power", card.fixture_bonus_power},
+                {"gate_bonus_power", card.gate_bonus_power},
                 {"event_bonus_rate", card.event_bonus_rate},
+                {"support_deck_bonus_rate", card.support_deck_bonus_rate},
                 {"master_rank", card.master_rank},
                 {"level", card.level},
                 {"skill_level", card.skill_level},
@@ -1636,7 +2070,43 @@ json resultToJson(const PyDeckRecommendResult& result) {
                 {"has_canvas_bonus", card.has_canvas_bonus},
             });
         }
-        decks.push_back({
+        json wlSubDeck = nullptr;
+        if (deck.wl_sub_deck.has_value()) {
+            json subCards = json::array();
+            for (const auto& card : deck.wl_sub_deck->cards) {
+                subCards.push_back({
+                    {"card_id", card.card_id},
+                    {"character_id", card.character_id},
+                    {"card_rarity_type", card.card_rarity_type},
+                    {"attr", card.attr},
+                    {"total_power", card.total_power},
+                    {"base_power", card.base_power},
+                    {"area_item_bonus_power", card.area_item_bonus_power},
+                    {"character_bonus_power", card.character_bonus_power},
+                    {"fixture_bonus_power", card.fixture_bonus_power},
+                    {"gate_bonus_power", card.gate_bonus_power},
+                    {"event_bonus_rate", card.event_bonus_rate},
+                    {"support_deck_bonus_rate", card.support_deck_bonus_rate},
+                    {"master_rank", card.master_rank},
+                    {"level", card.level},
+                    {"skill_level", card.skill_level},
+                    {"skill_score_up", card.skill_score_up},
+                    {"skill_life_recovery", card.skill_life_recovery},
+                    {"episode1_read", card.episode1_read},
+                    {"episode2_read", card.episode2_read},
+                    {"after_training", card.after_training},
+                    {"default_image", card.default_image},
+                    {"has_canvas_bonus", card.has_canvas_bonus},
+                });
+            }
+            wlSubDeck = {
+                {"character_id", deck.wl_sub_deck->character_id},
+                {"capacity", deck.wl_sub_deck->capacity},
+                {"bonus_rate", deck.wl_sub_deck->bonus_rate},
+                {"cards", std::move(subCards)},
+            };
+        }
+        json deckJson = {
             {"score", deck.score},
             {"live_score", deck.live_score},
             {"mysekai_event_point", deck.mysekai_event_point},
@@ -1650,9 +2120,14 @@ json resultToJson(const PyDeckRecommendResult& result) {
             {"event_bonus_rate", deck.event_bonus_rate},
             {"support_deck_bonus_rate", deck.support_deck_bonus_rate},
             {"multi_live_score_up", deck.multi_live_score_up},
+            {"event_diff_attr_bonus_rate", deck.event_diff_attr_bonus_rate},
+            {"event_shuffle_unit_bonus_rate", deck.event_shuffle_unit_bonus_rate},
             {"algorithms", deck.algorithms},
             {"cards", std::move(cards)},
-        });
+        };
+        if (deck.wl_sub_deck.has_value())
+            deckJson["wl_sub_deck"] = std::move(wlSubDeck);
+        decks.push_back(std::move(deckJson));
     }
     return {
         {"decks", std::move(decks)},

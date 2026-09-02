@@ -32,13 +32,56 @@ struct DeckCardDetail {
     bool afterTraining;
     int defaultImage;
     bool hasCanvasBonus;
+    double supportDeckBonus = 0.0;
+    int characterId = 0;
+    int cardRarityType = 0;
+    int attr = 0;
+};
+
+struct DeckEventBonusDetail {
+    std::array<double, 5> cardBonus{};
+    double diffAttrBonus = 0.0;
+    double shuffleUnitBonus = 0.0;
+};
+
+struct DeckSupportCardDetail {
+    int cardId = 0;
+    int characterId = 0;
+    int cardRarityType = 0;
+    int attr = 0;
+    int level = 0;
+    int skillLevel = 0;
+    int masterRank = 0;
+    int totalPower = 0;
+    int basePower = 0;
+    int areaItemBonusPower = 0;
+    int characterBonusPower = 0;
+    int fixtureBonusPower = 0;
+    int gateBonusPower = 0;
+    double eventBonus = 0.0;
+    double supportDeckBonus = 0.0;
+    DeckCardSkillDetail skill{};
+    bool episode1Read = false;
+    bool episode2Read = false;
+    bool afterTraining = false;
+    int defaultImage = 0;
+    bool hasCanvasBonus = false;
+};
+
+struct DeckSupportDeckDetail {
+    int characterId = 0;
+    int capacity = 0;
+    double bonus = 0.0;
+    std::vector<DeckSupportCardDetail> cards;
 };
 
 struct DeckDetail {
     DeckPowerDetail power;
     std::optional<double> eventBonus;
     std::optional<double> supportDeckBonus;
-    std::optional<std::vector<CardDetail>> supportDeckCards;    // for debug
+    std::optional<DeckEventBonusDetail> eventBonusDetail;
+    std::optional<DeckSupportDeckDetail> supportDeck;
+    std::optional<std::vector<SupportDeckCard>> supportDeckCards;    // internal selected support cards
     std::vector<DeckCardDetail> cards;
     double multiLiveScoreUp;
 };

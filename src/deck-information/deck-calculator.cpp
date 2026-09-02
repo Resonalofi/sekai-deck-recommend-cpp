@@ -286,13 +286,14 @@ SupportDeckBonus DeckCalculator::getSupportDeckBonus(
     double bonus = 0;
     int count = 0;
     
-    std::vector<CardDetail> cards{};
+    std::vector<SupportDeckCard> cards{};
     for (std::size_t i = 0; i < supportCards.cards.size(); ++i) {
         // 支援卡组的卡不能和主队伍重复，需要排除掉
         if (i < 32 && (excludedRanks & (std::uint32_t{1} << i)))
             continue;
         const auto& card = supportCards.cards[i];
         bonus += card.bonus;
+        cards.push_back(card);
         count++;
         if (count >= supportDeckCount) return { bonus, cards };
     }
@@ -605,18 +606,21 @@ std::vector<DeckDetail> DeckCalculator::getDeckDetailByCards(
                 }
 
                 cards.push_back(DeckCardDetail{
-                    cardDetail.cardId,
-                    cardDetail.level,
-                    cardDetail.skillLevel,
-                    cardDetail.masterRank,
-                    state.power.cards[i],
-                    state.eventBonus.cardBonus[i],
-                    state.skills[i],
-                    cardDetail.episode1Read,
-                    cardDetail.episode2Read,
-                    cardDetail.afterTraining,
-                    defaultImage,
-                    cardDetail.hasCanvasBonus,
+                    .cardId = cardDetail.cardId,
+                    .level = cardDetail.level,
+                    .skillLevel = cardDetail.skillLevel,
+                    .masterRank = cardDetail.masterRank,
+                    .power = state.power.cards[i],
+                    .eventBonus = state.eventBonus.cardBonus[i],
+                    .skill = state.skills[i],
+                    .episode1Read = cardDetail.episode1Read,
+                    .episode2Read = cardDetail.episode2Read,
+                    .afterTraining = cardDetail.afterTraining,
+                    .defaultImage = defaultImage,
+                    .hasCanvasBonus = cardDetail.hasCanvasBonus,
+                    .characterId = cardDetail.characterId,
+                    .cardRarityType = cardDetail.cardRarityType,
+                    .attr = cardDetail.attr,
                 });
             }
 
@@ -624,7 +628,27 @@ std::vector<DeckDetail> DeckCalculator::getDeckDetailByCards(
                 .power = state.power.total,
                 .eventBonus = state.eventBonus.totalBonus,
                 .supportDeckBonus = state.supportDeckBonus,
-                .supportDeckCards = std::nullopt,
+                .eventBonusDetail = DeckEventBonusDetail{
+                    .cardBonus = state.eventBonus.cardBonus,
+                    .diffAttrBonus = state.eventBonus.diffAttrBonus,
+                    .shuffleUnitBonus = state.eventBonus.shuffleUnitBonus,
+                },
+                .supportDeck = std::nullopt,
+                .supportDeckCards = supportCards.empty()
+                    ? std::nullopt
+                    : std::optional<std::vector<SupportDeckCard>>{
+                        [&]() {
+                            SupportDeckCards* selected = nullptr;
+                            if (isFinalChapterEvent(eventId.value_or(0)))
+                                selected = &supportCards.at(cardDetails[state.order[0]]->characterId);
+                            else
+                                selected = &supportCards.begin()->second;
+                            return getSupportDeckBonus(
+                                cardDetails, *selected,
+                                getWorldBloomSupportDeckCount(eventId.value_or(0))
+                            ).cards;
+                        }()
+                    },
                 .cards = std::move(cards),
                 .multiLiveScoreUp = state.multiLiveScoreUp,
             });

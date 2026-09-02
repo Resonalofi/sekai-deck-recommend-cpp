@@ -153,6 +153,10 @@ class DeckRecommendOptions:
         skill_order_choose_strategy (str): Strategy for skill order choose in ["average", "max", "min", "specific"], default is "average"
         specific_skill_order (List[int]): Specific skill order starting from 0, only required when skill_order_choose_strategy is "specific", default is None
         ga_options (DeckRecommendGaOptions): Genetic algorithm options
+        area_item_config (dict): Area item simulation. Supports mode current/empty/max/uniform/minimum and per-item levels in items.
+        character_rank_config (dict): Character rank simulation with mode current/max/fixed and per-character overrides.
+        honor_config (dict): Honor simulation with mode current/none and per-honor enabled/level overrides.
+        mysekai_config (dict): MySekai fixture, gate, and canvas simulation settings.
     """
     target: Optional[str]
     algorithm: Optional[str]
@@ -197,6 +201,10 @@ class DeckRecommendOptions:
     skill_order_choose_strategy: Optional[str]
     specific_skill_order: Optional[List[int]]
     ga_options: Optional[DeckRecommendGaOptions]
+    area_item_config: Optional[Dict[str, Any]]
+    character_rank_config: Optional[Dict[str, Any]]
+    honor_config: Optional[Dict[str, Any]]
+    mysekai_config: Optional[Dict[str, Any]]
 
     def to_dict(self) -> Dict[str, Any]:
         ...
@@ -210,9 +218,17 @@ class RecommendCard:
     Card recommendation result
     Attributes:
         card_id (int): Card ID
+        character_id (int): Character ID
+        card_rarity_type (int): Card rarity type enum ID
+        attr (int): Attribute enum ID
         total_power (int): Total power of the card
         base_power (int): Base power of the card
+        area_item_bonus_power (int): Area item contribution to the card power
+        character_bonus_power (int): Character rank contribution to the card power
+        fixture_bonus_power (int): MySekai fixture contribution to the card power
+        gate_bonus_power (int): MySekai gate contribution to the card power
         event_bonus_rate (float): Event bonus rate of the card
+        support_deck_bonus_rate (float): WorldLink support deck bonus rate of the card
         master_rank (int): Master rank of the card
         level (int): Level of the card
         skill_level (int): Skill level of the card
@@ -225,9 +241,17 @@ class RecommendCard:
         has_canvas_bonus (bool): Whether the card has canvas bonus
     """
     card_id: int
+    character_id: int
+    card_rarity_type: int
+    attr: int
     total_power: int
     base_power: int
+    area_item_bonus_power: int
+    character_bonus_power: int
+    fixture_bonus_power: int
+    gate_bonus_power: int
     event_bonus_rate: float
+    support_deck_bonus_rate: float
     master_rank: int
     level: int
     skill_level: int
@@ -243,6 +267,20 @@ class RecommendCard:
         ...
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'RecommendCard':
+        ...
+
+
+class RecommendSupportDeck:
+    """WorldLink support deck selected for one recommended main deck."""
+    character_id: int
+    capacity: int
+    bonus_rate: float
+    cards: List[RecommendCard]
+
+    def to_dict(self) -> Dict[str, Any]:
+        ...
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'RecommendSupportDeck':
         ...
 
 
@@ -263,6 +301,9 @@ class RecommendDeck:
         event_bonus_rate (float): Event bonus rate of the deck
         support_deck_bonus_rate (float): Support deck bonus rate of the deck
         multi_live_score_up (float): final score up of the deck in multi live
+        event_diff_attr_bonus_rate (float): WorldLink different-attribute bonus rate
+        event_shuffle_unit_bonus_rate (float): WorldLink finale shuffle-unit bonus rate
+        wl_sub_deck (RecommendSupportDeck): Best WorldLink support deck for this main deck, when applicable
         algorithms (List[str]): algorithms that found this deck, ordered as requested
         cards (List[RecommendCard]): List of recommended cards in the deck
     """
@@ -279,6 +320,9 @@ class RecommendDeck:
     event_bonus_rate: float
     support_deck_bonus_rate: float
     multi_live_score_up: float
+    event_diff_attr_bonus_rate: float
+    event_shuffle_unit_bonus_rate: float
+    wl_sub_deck: Optional[RecommendSupportDeck]
     algorithms: List[str]
     cards: List[RecommendCard]
 

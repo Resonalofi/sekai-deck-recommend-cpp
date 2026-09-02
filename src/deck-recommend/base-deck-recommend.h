@@ -110,6 +110,7 @@ struct DeckRecommendConfig {
     double gaCrossoverRate = 1.0; // 交叉率
     double gaBaseMutationRate = 0.1; // 基础变异率
     double gaNoImproveIterToMutationRate = 0.02; // 无改进迭代次数转换为变异率的比例
+
 };
 
 
@@ -128,6 +129,8 @@ class BaseDeckRecommend {
     CardService cardService;
     LiveCalculator liveCalculator;
     AreaItemService areaItemService;
+    // 当前推荐请求的有效用户卡状态；包含全当期生成的虚拟卡，供 WL sub 物化复用。
+    std::shared_ptr<const std::unordered_map<int, UserCard>> effectiveUserCards{};
 
 public:
 
@@ -182,7 +185,13 @@ public:
         std::optional<int> eventId,
         const DeckRecommendConfig& config,
         const RecommendCandidate& candidate
-    ) const;
+    );
+
+    void materializeSupportDecks(
+        std::vector<RecommendDeck>& decks,
+        const DeckRecommendConfig& config,
+        const EventConfig& eventConfig
+    );
 
     std::optional<RecommendDeck> findBestBonusCardCombination(
         int liveType,

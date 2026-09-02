@@ -2,6 +2,7 @@
 #include "card-priority/card-priority-filter.h"
 #include "common/timer.h"
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <random>
 #include <thread>
@@ -404,7 +405,7 @@ RecommendDeck BaseDeckRecommend::materializeCandidate(
     std::optional<int> eventId,
     const DeckRecommendConfig& config,
     const RecommendCandidate& candidate
-) const {
+) {
     bool bestSkillAsLeader = config.bestSkillAsLeader;
     if (config.fixedCharacters.size()) bestSkillAsLeader = false;
     if (eventId.has_value() && isFinalChapterEvent(eventId.value())) bestSkillAsLeader = false;
@@ -421,6 +422,74 @@ RecommendDeck BaseDeckRecommend::materializeCandidate(
         candidate.statusMask
     );
     return RecommendDeck(deckDetails.front(), config.target, candidate.score);
+}
+
+void BaseDeckRecommend::materializeSupportDecks(
+    std::vector<RecommendDeck>& decks,
+    const DeckRecommendConfig& config,
+    const EventConfig& eventConfig
+) {
+    if (eventConfig.eventType != Enums::EventType::world_bloom)
+        return;
+
+    const auto areaItemLevels = areaItemService.getAreaItemLevels();
+    const auto scoreUpLimit = isFinalChapterEvent(eventConfig.eventId)
+        ? std::optional<double>(140.0)
+        : std::nullopt;
+    for (auto& deck : decks) {
+        if (!deck.supportDeckCards.has_value())
+            continue;
+
+        DeckSupportDeckDetail supportDeck{};
+        supportDeck.capacity = deckCalculator.getWorldBloomSupportDeckCount(eventConfig.eventId);
+        supportDeck.characterId = isFinalChapterEvent(eventConfig.eventId)
+            ? deck.cards.front().characterId
+            : eventConfig.specialCharacterId;
+        supportDeck.bonus = deck.supportDeckBonus.value_or(0.0);
+
+        EventConfig supportEventConfig = eventConfig;
+        supportEventConfig.specialCharacterId = supportDeck.characterId;
+        for (const auto& supportCard : deck.supportDeckCards.value()) {
+            const auto userCard = effectiveUserCards->find(supportCard.cardId);
+            if (userCard == effectiveUserCards->end())
+                continue;
+            const auto details = cardCalculator.batchGetCardDetail(
+                {userCard->second}, config.cardConfig, config.singleCardConfig,
+                supportEventConfig, areaItemLevels, scoreUpLimit
+            );
+            if (details.empty())
+                continue;
+
+            const auto& detail = details.front();
+            const auto& supportPower = detail.power.get(
+                std::countr_zero(detail.unitMask), 1, 1
+            );
+            DeckSupportCardDetail output{};
+            output.cardId = detail.cardId;
+            output.characterId = detail.characterId;
+            output.cardRarityType = detail.cardRarityType;
+            output.attr = detail.attr;
+            output.totalPower = supportPower.total;
+            output.basePower = supportPower.base;
+            output.areaItemBonusPower = supportPower.areaItemBonus;
+            output.characterBonusPower = supportPower.characterBonus;
+            output.fixtureBonusPower = supportPower.fixtureBonus;
+            output.gateBonusPower = supportPower.gateBonus;
+            output.eventBonus = detail.maxEventBonus.value_or(0.0);
+            output.level = detail.level;
+            output.skillLevel = detail.skillLevel;
+            output.masterRank = detail.masterRank;
+            output.supportDeckBonus = supportCard.bonus;
+            output.skill = detail.skill.get(Enums::Unit::any, 1, 1);
+            output.episode1Read = detail.episode1Read;
+            output.episode2Read = detail.episode2Read;
+            output.afterTraining = detail.afterTraining;
+            output.defaultImage = detail.defaultImage;
+            output.hasCanvasBonus = detail.hasCanvasBonus;
+            supportDeck.cards.push_back(std::move(output));
+        }
+        deck.supportDeck = std::move(supportDeck);
+    }
 }
 
 
@@ -531,6 +600,27 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
 {
     this->dataProvider.init();
 
+    auto effectiveUserCardsSnapshot = std::make_shared<std::unordered_map<int, UserCard>>();
+    for (const auto& userCard : userCards) {
+        const auto cardIt = std::find_if(
+            dataProvider.masterData->cards.begin(),
+            dataProvider.masterData->cards.end(),
+            [&userCard](const Card& card) { return card.id == userCard.cardId; }
+        );
+        if (cardIt == dataProvider.masterData->cards.end())
+            continue;
+        CardConfig cardConfig{};
+        if (config.singleCardConfig.count(userCard.cardId))
+            cardConfig = config.singleCardConfig.at(userCard.cardId);
+        else if (config.cardConfig.count(cardIt->cardRarityType))
+            cardConfig = config.cardConfig.at(cardIt->cardRarityType);
+        if (!cardConfig.disable)
+            (*effectiveUserCardsSnapshot)[userCard.cardId] = cardService.applyCardConfig(
+                userCard, *cardIt, cardConfig
+            );
+    }
+    effectiveUserCards = std::move(effectiveUserCardsSnapshot);
+
     // 暂不支持同时指定固定卡牌和固定角色
     if (config.fixedCards.size() && config.fixedCharacters.size())
         throw std::runtime_error("Cannot set both fixed cards and fixed characters");
@@ -560,16 +650,24 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
         for (const auto& card : userCards)
             maxSupportCardId = std::max(maxSupportCardId, card.cardId);
     }
+    std::unordered_set<int> supportEligibleCardIds{};
+    supportEligibleCardIds.reserve(cards.size());
+    for (const auto& card : cards)
+        supportEligibleCardIds.insert(card.cardId);
     const auto buildSupportCards = [&](int specialCharacterId) {
         SupportDeckCards result;
         result.cards.reserve(userCards.size());
         for (const auto& card : userCards) {
+            if (!supportEligibleCardIds.count(card.cardId) || !effectiveUserCards->count(card.cardId))
+                continue;
             result.cards.push_back(this->cardCalculator.getSupportDeckCard(
-                card, eventConfig.eventId, specialCharacterId
+                effectiveUserCards->at(card.cardId), eventConfig.eventId, specialCharacterId
             ));
         }
-        std::sort(result.cards.begin(), result.cards.end(), [](const SupportDeckCard& a, const SupportDeckCard& b) {
-            return a.bonus > b.bonus;
+        std::stable_sort(result.cards.begin(), result.cards.end(), [](const SupportDeckCard& a, const SupportDeckCard& b) {
+            if (a.bonus != b.bonus)
+                return a.bonus > b.bonus;
+            return a.cardId < b.cardId;
         });
         result.topRankByCardId.assign(maxSupportCardId + 1, 32);
         const auto indexedCount = std::min<std::size_t>(result.cards.size(), 32);
@@ -745,6 +843,7 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
         std::sort(ans.begin(), ans.end(), [](const RecommendDeck& a, const RecommendDeck& b) {
             return std::tuple(-a.eventBonus.value_or(0), a.targetValue) > std::tuple(-b.eventBonus.value_or(0), b.targetValue);
         });
+        materializeSupportDecks(ans, config, eventConfig);
         return result;
     }
 
@@ -945,6 +1044,7 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
             queue.pop();
         }
         std::reverse(ans.begin(), ans.end());
+        materializeSupportDecks(ans, config, eventConfig);
         return result;
     }
     std::bitset<32> fixedCharacterMask{};
@@ -1073,5 +1173,6 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
         }
     }
 
+    materializeSupportDecks(ans, config, eventConfig);
     return result;
 }

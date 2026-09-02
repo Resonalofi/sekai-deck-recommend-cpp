@@ -124,6 +124,41 @@ result = sekai_deck_recommend.recommend(options)
 
 For more details of options, please refer the docstring of `sekai_deck_recommend.DeckRecommendOptions`
 
+## Simulation and WorldLink details
+
+The recommendation options accept partial override dictionaries. Before calculation,
+each explicitly provided field overwrites the corresponding field in this request's
+user data; omitted fields keep their current user-data value:
+
+```python
+options.area_item_config = {
+    "mode": "current",              # current, empty, max, uniform, minimum
+    "items": {"12": 15, "13": 8},  # per-area-item overrides; 0 disables one item
+}
+# A flat dictionary is also accepted for fine-grained furniture DIY:
+options.area_item_config = {"12": 15, "13": 8, "14": 0}
+options.character_rank_config = {
+    "mode": "current",              # current, max, fixed
+    "overrides": {"17": 60},
+}
+options.honor_config = {
+    "mode": "current",              # current or none
+    "overrides": {"12345": {"enabled": False}},
+}
+options.mysekai_config = {
+    "fixtures": {"mode": "current", "rates": {"17": 12.5}},
+    "gates": {"mode": "none", "overrides": {"1001": {"enabled": False}}},
+    "canvas": {"mode": "none", "include": [123], "exclude": [456]},
+}
+```
+
+For WorldLink recommendations, each returned deck includes `wl_sub_deck` with the
+selected support cards and their full card state, including level, master rank,
+skill level, episode status, training image, power breakdown, and support bonus.
+The main deck also exposes `event_diff_attr_bonus_rate` and
+`event_shuffle_unit_bonus_rate`; each main card's `event_bonus_rate` is its actual
+position-dependent event bonus.
+
 ## Acknowledgments
 - Original implementation by [xfl03/sekai-calculator](https://github.com/xfl03/sekai-calculator)
 - JSON parsing by [nlohmann/json](https://github.com/nlohmann/json)
