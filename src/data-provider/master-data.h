@@ -9,7 +9,7 @@
 
 
 constexpr int finalChapterEventId = 180;    // WL2终章
-constexpr int finalChapter2EventId = 217;   // WL3终章
+constexpr int finalChapter2EventId = 218;   // WL3终章
 
 constexpr bool isFinalChapterEvent(int eventId) {
     return eventId == finalChapterEventId || eventId == finalChapter2EventId;

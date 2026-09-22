@@ -340,12 +340,12 @@ void addFinalChapter2EventIfNeeded(MasterData& md) {
             md.eventDeckBonuses.push_back(bonus);
         }
 
-        // wl3限定卡牌加成：动态选取真实WL3章节活动的当期卡，第5章数据落地后自动包含
+        // 动态选取真实WL章节活动的当期卡；主队仅WL3生效，支援含WL1/WL2/WL3
         std::set<int> limitedCardIds;
         std::vector<EventCard> newEventCards{};
         for (const auto& eventCard : md.eventCards) {
             if (eventCard.eventId >= 1000 ||
-                md.getWorldBloomEventTurn(eventCard.eventId) != 3 ||
+                isFinalChapterEvent(eventCard.eventId) ||
                 eventCard.bonusRate <= 0) {
                 continue;
             }
@@ -360,13 +360,15 @@ void addFinalChapter2EventIfNeeded(MasterData& md) {
             if (cardIt == md.cards.end() || !limitedCardIds.insert(eventCard.cardId).second)
                 continue;
 
-            auto newEventCard = eventCard;
-            newEventCard.eventId = finalChapter2EventId;
-            newEventCard.bonusRate = 25.0;
-            newEventCard.leaderBonusRate = 20.0;
-            newEventCards.push_back(newEventCard);
+            if (md.getWorldBloomEventTurn(eventCard.eventId) == 3) {
+                auto newEventCard = eventCard;
+                newEventCard.eventId = finalChapter2EventId;
+                newEventCard.bonusRate = 25.0;
+                newEventCard.leaderBonusRate = 20.0;
+                newEventCards.push_back(newEventCard);
+            }
 
-            // 支援里的wl3限定卡牌加成
+            // 支援里的WL1/WL2/WL3限定卡牌加成，仅对应角色生效且每张卡只添加一次
             WorldBloomSupportDeckUnitEventLimitedBonus supportBonus;
             supportBonus.eventId = finalChapter2EventId;
             supportBonus.gameCharacterId = cardIt->characterId;
