@@ -143,7 +143,7 @@ class DeckRecommendOptions:
         fixed_characters (List[int]): List of character IDs that always included in the deck (first is always leader), cannot used in challenge live, cannot used with fixed_cards together, default is None
         own_all_bonus_cards (bool): Treat all bonus cards (bonusRate > 0) of the event as owned, adding virtual cards to the pool, default is False
         bonus_card_config (DeckRecommendCardConfig): Card config applied to every bonus card when own_all_bonus_cards is set (entries in single_card_configs take precedence), default is level_max/episode_read only
-        target_bonus_list (List[int]): List of target event bonus, required when target is "bonus"
+        target_bonus_list (List[int]): List of target event bonus, required when target is "bonus". For WorldLink final chapters, leader-only bonuses count for the first card (the leader) of each deck
         skill_reference_choose_strategy (str): Strategy for bfes skill reference choose in ["average", "max", "min"], default is "average"
         keep_after_training_state (bool): Whether to keep after-training state of bfes cards, default is False
         multi_live_teammate_score_up (int): Score up of single multi-live teammate, default is None (None means copying self score up)

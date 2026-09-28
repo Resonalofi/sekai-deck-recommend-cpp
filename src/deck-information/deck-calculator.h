@@ -5,6 +5,20 @@
 #include "deck-information/deck-service.h"
 #include "event-point/event-service.h"
 #include "card-information/card-calculator.h"
+#include <bit>
+
+// 终章2 shuffle unit bonus 计数用的组合；V家一律按“バーチャル・シンガー”计，不按支援组合计
+inline int getFinalChapter2ShuffleUnit(const CardDetail& card) {
+    return card.characterId >= 21 ? Enums::Unit::piapro : std::countr_zero(card.unitMask);
+}
+
+// 终章2按编成内组合数发挥的 shuffle unit bonus
+inline double getFinalChapter2ShuffleUnitBonus(int unitCount) {
+    return unitCount >= 5 ? 50.0
+         : unitCount == 4 ? 30.0
+         : unitCount == 3 ? 10.0
+         : 0.0;
+}
 
 enum class SkillReferenceChooseStrategy {
     Max,

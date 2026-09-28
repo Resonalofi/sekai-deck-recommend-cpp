@@ -244,20 +244,12 @@ DeckBonusInfo DeckCalculator::getDeckBonus(
         ret.diffAttrBonus = it.bonusRate;
     }
 
-    // 终章2按编成内组合数发挥shuffle unit bonus；V家一律按“バーチャル・シンガー”计，不按支援组合计
+    // 终章2按编成内组合数发挥shuffle unit bonus
     if (eventId.value_or(0) == finalChapter2EventId) {
         uint16_t units = 0;
-        for (const auto &card : deckCards) {
-            const int unit = card->characterId >= 21
-                ? Enums::Unit::piapro
-                : std::countr_zero(card->unitMask);
-            units |= uint16_t{1} << unit;
-        }
-        const int unitCount = std::popcount(units);
-        ret.shuffleUnitBonus = unitCount >= 5 ? 50.0
-                             : unitCount == 4 ? 30.0
-                             : unitCount == 3 ? 10.0
-                             : 0.0;
+        for (const auto &card : deckCards)
+            units |= uint16_t{1} << getFinalChapter2ShuffleUnit(*card);
+        ret.shuffleUnitBonus = getFinalChapter2ShuffleUnitBonus(std::popcount(units));
     }
 
     ret.totalBonus = ret.diffAttrBonus + ret.shuffleUnitBonus + std::accumulate(

@@ -188,8 +188,10 @@ void BaseDeckRecommend::findWorldBloomTargetBonusCardsDFS(
     const std::vector<CardDetail>& fixedCards
 )
 {
-    if (isFinalChapterEvent(eventId.value_or(0)))
-        throw std::invalid_argument("final chapter event is not supported for bonus target");
+    if (isFinalChapterEvent(eventId.value_or(0))) {
+        // 终章加成与队长有关，由 findFinalChapterTargetBonusCardsDFS 处理
+        throw std::runtime_error("this func is not used for final chapter event");
+    }
 
     std::vector<int> bonusList = config.bonusList;
     for (auto& x : bonusList) x *= 2;

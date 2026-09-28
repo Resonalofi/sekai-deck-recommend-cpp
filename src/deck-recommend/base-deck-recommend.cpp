@@ -815,11 +815,18 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
                 [](RecommendAlgorithm it) { return it != RecommendAlgorithm::DFS; }))
             throw std::runtime_error("Bonus target only supports DFS algorithm");
 
-        // WL和普通活动采用不同代码
+        // 普通活动、WL和WL终章采用不同代码
         calcInfo.currentAlgorithmMask = recommendAlgorithmBit(RecommendAlgorithm::DFS);
         const long long bonusStartNs = steadyNowNs();
         if (eventConfig.eventType != Enums::EventType::world_bloom) {
             findTargetBonusCardsDFS(
+                liveType, config, cards, sf, calcInfo,
+                config.limit, config.member, eventConfig.eventType, eventConfig.eventId,
+                fixedCards
+            );
+        }
+        else if (isFinalChapterEvent(eventConfig.eventId)) {
+            findFinalChapterTargetBonusCardsDFS(
                 liveType, config, cards, sf, calcInfo,
                 config.limit, config.member, eventConfig.eventType, eventConfig.eventId,
                 fixedCards

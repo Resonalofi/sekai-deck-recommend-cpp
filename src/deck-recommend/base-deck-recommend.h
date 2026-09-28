@@ -309,6 +309,30 @@ public:
     );
 
     /**
+     * 使用递归寻找指定WL终章加成卡组
+     * 终章的章节称号与当期队长加成只对队长生效，终章1最多生效4个当期，终章2另有组合数加成
+     * 固定角色的第一位为队长，否则每个成员都会尝试作为队长
+     * @param cardDetails 参与计算的卡牌
+     * @param scoreFunc 获得分数的公式
+     * @param dfsInfo DFS信息
+     * @param limit 需要推荐的卡组数量
+     * @param member 人数限制（2-5、默认5）
+     * @param eventType （可选）活动类型
+     */
+    void findFinalChapterTargetBonusCardsDFS(
+        int liveType,
+        const DeckRecommendConfig& config,
+        const std::vector<CardDetail>& cardDetails,
+        const std::function<Score(const DeckScoreDetail&)>& scoreFunc,
+        RecommendCalcInfo& dfsInfo,
+        int limit = 1,
+        int member = 5,
+        std::optional<int> eventType = std::nullopt,
+        std::optional<int> eventId = std::nullopt,
+        const std::vector<CardDetail>& fixedCards = {}
+    );
+
+    /**
      * 运行单个推荐算法，把结果写入给定的计算信息
      * 并行组合算法时每个线程持有独立的引擎副本、支援卡组副本与计算信息
      * @param pool 该算法使用的候选卡牌（已按强度排序）
