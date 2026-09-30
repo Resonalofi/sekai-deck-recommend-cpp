@@ -56,7 +56,8 @@ public:
         const std::vector<AreaItemLevel>& userAreaItemLevels,
         bool hasCanvasBonus,
         const std::vector<MysekaiGateBonus>& userGateBonuses,
-        std::optional<int> fixtureBonusLimit = std::nullopt
+        std::optional<int> fixtureBonusLimit = std::nullopt,
+        std::vector<DeckCardPowerDetail>* multiUnitPower = nullptr
     );
     
     /**
@@ -114,6 +115,17 @@ public:
         bool sameUnit,
         int attr,
         bool sameAttr
+    );
+
+    int getMultiUnitAreaItemBonusPower(
+        const std::vector<AreaItemLevel>& userAreaItemLevels,
+        const BasePower& basePower,
+        const Card& card,
+        int characterUnit,
+        int supportUnit,
+        bool characterUnitAllMatch,
+        bool supportUnitAllMatch,
+        bool attrAllMatch
     );
 
     /**

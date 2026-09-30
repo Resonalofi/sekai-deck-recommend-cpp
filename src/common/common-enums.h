@@ -35,6 +35,8 @@ namespace Enums {
         const int theme_park = mapEnum(EnumMap::unit, "theme_park");
         const int school_refusal = mapEnum(EnumMap::unit, "school_refusal");
         const int piapro = mapEnum(EnumMap::unit, "piapro");
+        // 区域道具效果目标，不是卡牌所属组合。
+        const int multi_unit = mapEnum(EnumMap::unit, "multi_unit");
 
         const std::array<int, 6> specificUnits = {
             light_sound,

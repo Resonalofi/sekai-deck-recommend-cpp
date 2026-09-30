@@ -33,6 +33,8 @@ struct CardDetail {
     CardPowerDetailMap power;
     // [unit slot][same unit * 2 + same attribute]
     std::array<std::array<int, 4>, 2> powerTotals;
+    // DFS上界：[同组合 * 2 + 同属性]，包含多组合家具可能提供的加成。
+    std::array<int, 4> powerBounds;
     CardSkillDetailMap skill;
     std::optional<double> maxEventBonus;    // 最大活动加成
     std::optional<double> minEventBonus;    // 最小活动加成，用于终章计算
@@ -45,6 +47,16 @@ struct CardDetail {
     bool episode2Read;
     bool afterTraining;
     int defaultImage;
+    // [角色组全匹配 * 4 + 支援组全匹配 * 2 + 同属性]；未持有多组合家具时为空。
+    std::vector<DeckCardPowerDetail> multiUnitPower;
+
+    const DeckCardPowerDetail& getMultiUnitPower(uint16_t commonUnits, bool sameAttr) const {
+        const uint16_t characterUnit = characterId >= 21
+            ? uint16_t{1} << Enums::Unit::piapro : unitMask;
+        const auto supportUnit = unitMask & ~characterUnit;
+        return multiUnitPower[(commonUnits & characterUnit ? 4 : 0)
+            + (commonUnits & supportUnit ? 2 : 0) + sameAttr];
+    }
 };
 
 struct SupportDeckCard {

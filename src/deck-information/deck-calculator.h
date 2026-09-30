@@ -116,6 +116,9 @@ public:
      */
     int getHonorBonusPower();
 
+    // 按角色组合及虚拟歌手支援组合判定是否为多组合编成。
+    static bool isMultiUnitDeck(const std::vector<const CardDetail*>& cards);
+
     DeckPowerCalculation getDeckPowerByCards(
         const std::vector<const CardDetail*>& cardDetails,
         int honorBonus = 0

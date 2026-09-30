@@ -309,6 +309,29 @@ int DeckCalculator::getHonorBonusPower()
     return bonus;
 }
 
+bool DeckCalculator::isMultiUnitDeck(const std::vector<const CardDetail*>& cards)
+{
+    const uint16_t virtualSinger = uint16_t{1} << Enums::Unit::piapro;
+    uint16_t units = 0;
+    for (const auto* card : cards) {
+        if (!(card->unitMask & virtualSinger))
+            units |= card->unitMask;
+    }
+    bool needVirtualSinger = false;
+    for (const auto* card : cards) {
+        if (!(card->unitMask & virtualSinger))
+            continue;
+        const auto supportUnit = card->unitMask & ~virtualSinger;
+        if (supportUnit == 0 || (units & supportUnit))
+            needVirtualSinger = true;
+        else
+            units |= supportUnit;
+    }
+    if (needVirtualSinger)
+        units |= virtualSinger;
+    return std::popcount(units) > 1;
+}
+
 DeckPowerCalculation DeckCalculator::getDeckPowerByCards(
     const std::vector<const CardDetail*>& cardDetails,
     int honorBonus
@@ -316,21 +339,29 @@ DeckPowerCalculation DeckCalculator::getDeckPowerByCards(
 {
     DeckPowerCalculation result{};
     int attrMap[16] = {};
+    uint16_t commonUnits = cardDetails.size() == 5 ? (uint16_t{1} << UNIT_MAX) - 1 : 0;
     for (const auto* card : cardDetails) {
+        commonUnits &= card->unitMask;
         ++attrMap[card->attr];
         for (auto units = card->unitMask; units; units &= units - 1) {
             const auto unit = std::countr_zero(units);
             ++result.unitCounts[unit];
         }
     }
+    const bool multiUnit = !cardDetails.empty() && !cardDetails.front()->multiUnitPower.empty()
+        && isMultiUnitDeck(cardDetails);
     for (size_t i = 0; i < cardDetails.size(); ++i) {
         const auto& card = *cardDetails[i];
         DeckCardPowerDetail power{};
-        for (auto units = card.unitMask; units; units &= units - 1) {
-            const auto unit = std::countr_zero(units);
-            const auto& current = card.power.get(unit, result.unitCounts[unit], attrMap[card.attr]);
-            if (current.total > power.total)
-                power = current;
+        if (multiUnit) {
+            power = card.getMultiUnitPower(commonUnits, attrMap[card.attr] == 5);
+        } else {
+            for (auto units = card.unitMask; units; units &= units - 1) {
+                const auto unit = std::countr_zero(units);
+                const auto& current = card.power.get(unit, result.unitCounts[unit], attrMap[card.attr]);
+                if (current.total > power.total)
+                    power = current;
+            }
         }
         result.cards[i] = power;
         result.total.base += power.base;
@@ -360,6 +391,11 @@ int DeckCalculator::getDeckTotalPowerByCards(
     }
 
     int total = honorBonus;
+    if (!cardDetails.empty() && !cardDetails.front()->multiUnitPower.empty() && isMultiUnitDeck(cardDetails)) {
+        for (const auto* card : cardDetails)
+            total += card->getMultiUnitPower(commonUnitMask, allSameAttr).total;
+        return total;
+    }
     if (commonUnitMask == 0) {
         for (const auto* card : cardDetails) {
             total += std::max(
@@ -417,7 +453,7 @@ void DeckCalculator::forEachDeckState(
     // 评分路径只消费 power.total.total 与 unitCounts，跳过分项综合力物化；
     // powerTotals[槽][状态] 与 power.get(unit, 组合数==5?5:1, 属性数==5?5:1).total 逐值等价
     DeckPowerCalculation powerCalculation{};
-    if (slimPower) {
+    if (slimPower && (cardDetails.empty() || cardDetails.front()->multiUnitPower.empty())) {
         int attrMap[16] = {};
         for (const auto* card : cardDetails) {
             ++attrMap[card->attr];
@@ -512,13 +548,21 @@ void DeckCalculator::forEachMultiLiveScoreState(
 
     int attrMap[16] = {};
     std::array<int, 16> unitCounts{};
+    uint16_t commonUnits = cardDetails.size() == 5 ? (uint16_t{1} << UNIT_MAX) - 1 : 0;
     for (const auto* card : cardDetails) {
+        commonUnits &= card->unitMask;
         ++attrMap[card->attr];
         for (auto units = card->unitMask; units; units &= units - 1)
             ++unitCounts[std::countr_zero(units)];
     }
+    const bool multiUnit = !cardDetails.empty() && !cardDetails.front()->multiUnitPower.empty()
+        && isMultiUnitDeck(cardDetails);
     int power = honorBonus;
     for (const auto* card : cardDetails) {
+        if (multiUnit) {
+            power += card->getMultiUnitPower(commonUnits, attrMap[card->attr] == 5).total;
+            continue;
+        }
         const int attrState = attrMap[card->attr] == 5 ? 1 : 0;
         int best = 0;
         int slot = 0;

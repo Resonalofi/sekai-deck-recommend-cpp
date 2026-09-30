@@ -55,9 +55,10 @@ std::optional<CardDetail> CardCalculator::getCardDetail(
     for (const auto unit : units)
         unitMask |= uint16_t{1} << unit;
     auto skill = this->skillCalculator.getCardSkill(userCard0, card, scoreUpLimit);
+    std::vector<DeckCardPowerDetail> multiUnitPower;
     auto power = this->powerCalculator.getCardPower(
         userCard0, card, units, userAreaItemLevels, hasCanvasBonus, userGateBonuses,
-        fixtureBonusLimit
+        fixtureBonusLimit, &multiUnitPower
     );
     std::array<std::array<int, 4>, 2> powerTotals{};
     int unitIndex = 0;
@@ -70,6 +71,16 @@ std::optional<CardDetail> CardCalculator::getCardDetail(
                     unit, sameUnit ? 5 : 1, sameAttr ? 5 : 1
                 ).total;
             }
+        }
+    }
+
+    std::array<int, 4> powerBounds{};
+    for (int state = 0; state < 4; ++state) {
+        powerBounds[state] = std::max(powerTotals[0][state], powerTotals[1][state]);
+        if (!multiUnitPower.empty()) {
+            // 无共同组合时两个组合均不全匹配，否则枚举角色组/支援组的全匹配情况。
+            for (int mask = state % 2; mask < (state < 2 ? 2 : 8); mask += 2)
+                powerBounds[state] = std::max(powerBounds[state], multiUnitPower[mask].total);
         }
     }
 
@@ -100,6 +111,7 @@ std::optional<CardDetail> CardCalculator::getCardDetail(
         .attr = card.attr,
         .power = power,
         .powerTotals = powerTotals,
+        .powerBounds = powerBounds,
         .skill = skill,
         .maxEventBonus = eventBonus.maxBonus,
         .minEventBonus = eventBonus.minBonus,
@@ -111,7 +123,8 @@ std::optional<CardDetail> CardCalculator::getCardDetail(
         .episode1Read = episode1Read,
         .episode2Read = episode2Read,
         .afterTraining = afterTraining,
-        .defaultImage = userCard.defaultImage
+        .defaultImage = userCard.defaultImage,
+        .multiUnitPower = std::move(multiUnitPower)
     };
 }
 

@@ -47,14 +47,15 @@ FifthCardBoundComponents fifthCardBoundComponents(
     const auto commonUnitMask = dfsInfo.deckCommonUnitMask & card->unitMask;
     int maxPower = honorBonus;
     if (commonUnitMask == 0) {
-        maxPower += dfsInfo.deckMixedUnitPowerTotals[allSameAttr];
-        maxPower += std::max(
-            card->powerTotals[0][allSameAttr],
-            card->powerTotals[1][allSameAttr]
-        );
+        maxPower += dfsInfo.deckMixedUnitPowerBounds[allSameAttr];
+        maxPower += card->powerBounds[allSameAttr];
     }
     else {
         const auto addCardPower = [&](const CardDetail* deckCard) {
+            if (!deckCard->multiUnitPower.empty()) {
+                maxPower += deckCard->powerBounds[2 + allSameAttr];
+                return;
+            }
             int cardPower = 0;
             int unitIndex = 0;
             for (auto units = deckCard->unitMask;
@@ -149,20 +150,12 @@ void DfsScoreBoundIndex::build(
             bonuses[character], card->maxEventBonus.value_or(0.0)
         );
 
-        updatePower(0, 0, character, std::max(
-            card->powerTotals[0][0], card->powerTotals[1][0]
-        ));
-        updatePower(card->attr, 0, character, std::max(
-            card->powerTotals[0][1], card->powerTotals[1][1]
-        ));
+        updatePower(0, 0, character, card->powerBounds[0]);
+        updatePower(card->attr, 0, character, card->powerBounds[1]);
         for (auto cardUnits = card->unitMask; cardUnits; cardUnits &= cardUnits - 1) {
             const int unit = std::countr_zero(cardUnits);
-            updatePower(0, unit, character, std::max(
-                card->powerTotals[0][2], card->powerTotals[1][2]
-            ));
-            updatePower(card->attr, unit, character, std::max(
-                card->powerTotals[0][3], card->powerTotals[1][3]
-            ));
+            updatePower(0, unit, character, card->powerBounds[2]);
+            updatePower(card->attr, unit, character, card->powerBounds[3]);
         }
     }
 
@@ -238,7 +231,7 @@ void BaseDeckRecommend::findBestCardsDFS(
         if (cfg.target == RecommendTarget::Power && dfsInfo.hasUsablePowerFloor(limit)) {
             const bool useMixedUnitPower = member != 5 || dfsInfo.deckCommonUnitMask == 0;
             const auto power = useMixedUnitPower
-                ? honorBonus + dfsInfo.deckMixedUnitPowerTotals[member == 5 && dfsInfo.deckAllSameAttr]
+                ? honorBonus + dfsInfo.deckMixedUnitPowerBounds[member == 5 && dfsInfo.deckAllSameAttr]
                 : this->deckCalculator.getDeckTotalPowerByCards(deckCards, honorBonus);
             if (power < dfsInfo.effectivePowerFloor()) {
                 return;
@@ -344,7 +337,7 @@ void BaseDeckRecommend::findBestCardsDFS(
                     const int state = (u > 0 ? 2 : 0) + (a > 0 ? 1 : 0);
                     int power = honorBonus;
                     for (const auto* card : deckCards)
-                        power += std::max(card->powerTotals[0][state], card->powerTotals[1][state]);
+                        power += card->powerBounds[state];
 
                     const auto* tops = boundIndex.powerTopRow(
                         boundPowerTops, attrs[a], units[u]
@@ -410,7 +403,7 @@ void BaseDeckRecommend::findBestCardsDFS(
                             deckCompatible = false;
                             break;
                         }
-                        power += std::max(card->powerTotals[0][state], card->powerTotals[1][state]);
+                        power += card->powerBounds[state];
                     }
                     if (!deckCompatible)
                         continue;
@@ -617,9 +610,7 @@ void BaseDeckRecommend::findBestCardsDFS(
             dfsInfo.deckAllSameAttr &= card->attr == dfsInfo.deckAttr;
         dfsInfo.deckCommonUnitMask &= card->unitMask;
         for (int sameAttr = 0; sameAttr < 2; ++sameAttr) {
-            dfsInfo.deckMixedUnitPowerTotals[sameAttr] += std::max(
-                card->powerTotals[0][sameAttr], card->powerTotals[1][sameAttr]
-            );
+            dfsInfo.deckMixedUnitPowerBounds[sameAttr] += card->powerBounds[sameAttr];
         }
         deckCards.push_back(card);
         deckCharacters.flip(card->characterId);
@@ -655,9 +646,7 @@ void BaseDeckRecommend::findBestCardsDFS(
         deckCards.pop_back();
         deckCharacters.flip(card->characterId);
         for (int sameAttr = 0; sameAttr < 2; ++sameAttr) {
-            dfsInfo.deckMixedUnitPowerTotals[sameAttr] -= std::max(
-                card->powerTotals[0][sameAttr], card->powerTotals[1][sameAttr]
-            );
+            dfsInfo.deckMixedUnitPowerBounds[sameAttr] -= card->powerBounds[sameAttr];
         }
         dfsInfo.deckCommonUnitMask = previousCommonUnitMask;
         dfsInfo.deckAttr = previousAttr;

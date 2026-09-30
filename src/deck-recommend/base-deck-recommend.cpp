@@ -116,7 +116,7 @@ void BaseDeckRecommend::runRecommendAlgorithm(
         info.deckCharacters = 0;
         info.deckCommonUnitMask = (uint16_t{1} << UNIT_MAX) - 1;
         info.deckAllSameAttr = true;
-        info.deckMixedUnitPowerTotals = {};
+        info.deckMixedUnitPowerBounds = {};
         std::vector<const CardDetail*> dfsCards;
         dfsCards.reserve(pool.size());
         for (const auto& card : pool)
@@ -136,16 +136,20 @@ void BaseDeckRecommend::runRecommendAlgorithm(
                 info.deckAllSameAttr &= card.attr == info.deckAttr;
             info.deckCommonUnitMask &= card.unitMask;
             for (int sameAttr = 0; sameAttr < 2; ++sameAttr) {
-                info.deckMixedUnitPowerTotals[sameAttr] += std::max(
-                    card.powerTotals[0][sameAttr], card.powerTotals[1][sameAttr]
-                );
+                info.deckMixedUnitPowerBounds[sameAttr] += card.powerBounds[sameAttr];
             }
             info.deckCards.push_back(&card);
             info.deckCharacters.flip(card.characterId);
         }
 
-        const bool wlPrune =
-            eventConfig.eventType != Enums::EventType::world_bloom || eventConfig.eventUnit != 0;
+        // 多组合家具可能让不同组、不同属性的卡更优，不能套用旧的同组/同属性候选过滤。
+        const bool hasMultiUnitPower = std::any_of(pool.begin(), pool.end(), [](const CardDetail& card) {
+            return !card.multiUnitPower.empty();
+        }) || std::any_of(fixedCards.begin(), fixedCards.end(), [](const CardDetail& card) {
+            return !card.multiUnitPower.empty();
+        });
+        const bool wlPrune = !hasMultiUnitPower &&
+            (eventConfig.eventType != Enums::EventType::world_bloom || eventConfig.eventUnit != 0);
         // 分区并行会改变顶层遍历顺序，只在「卡组得分与卡内次序无关」时才成立。
         // 三个条件缺一不可：
         //   1. Score 目标——Power/Skill/Mysekai 在 559~576 行用 preCard 做

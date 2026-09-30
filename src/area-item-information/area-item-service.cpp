@@ -6,35 +6,45 @@ std::vector<AreaItemLevel> AreaItemService::getAreaItemLevels()
     std::vector<AreaItemLevel> areaItemLevels{};
     for (const auto& userArea : userAreas) {
         for (const auto& areaItem : userArea.areaItems) {
-            areaItemLevels.push_back(this->getAreaItemLevel(areaItem.areaItemId, areaItem.level));
+            const auto rows = this->getAreaItemLevel(areaItem.areaItemId, areaItem.level);
+            areaItemLevels.insert(areaItemLevels.end(), rows.begin(), rows.end());
         }
     }
     return areaItemLevels;
 }
 
-AreaItemLevel AreaItemService::getAreaItemLevel(int areaItemId, int level)
+std::vector<AreaItemLevel> AreaItemService::getAreaItemLevel(int areaItemId, int level)
 {
-    auto& areaItemLevels = this->dataProvider.masterData->areaItemLevels;
-    return findOrThrow(areaItemLevels, [&](const AreaItemLevel& it) {
-        return it.areaItemId == areaItemId && it.level == level;
-    }, [&]() { return "Area item level not found for areaItemId=" + std::to_string(areaItemId) + " level=" + std::to_string(level); });
+    std::vector<AreaItemLevel> rows;
+    // 同一道具、同等级可有多条效果，按 master 顺序参与逐维累加。
+    for (const auto& row : dataProvider.masterData->areaItemLevels) {
+        if (row.areaItemId == areaItemId && row.level == level)
+            rows.push_back(row);
+    }
+    if (rows.empty())
+        throw ElementNoFoundError("Area item level not found for areaItemId=" + std::to_string(areaItemId) + " level=" + std::to_string(level));
+    return rows;
 }
 
-AreaItemLevel AreaItemService::getAreaItemNextLevel(const AreaItem &areaItem, std::optional<AreaItemLevel> areaItemLevel)
+std::vector<AreaItemLevel> AreaItemService::getAreaItemNextLevel(const AreaItem &areaItem, std::optional<AreaItemLevel> areaItemLevel)
 {
-    // 如果没有给定当前等级，就按未购买算、如果已经15级了下个等级还是15级
-    int level = areaItemLevel.has_value() ? (areaItemLevel->level == 15 ? 15 : areaItemLevel->level + 1) : 1;
+    int maxLevel = 0;
+    for (const auto& row : dataProvider.masterData->areaItemLevels) {
+        if (row.areaItemId == areaItem.id)
+            maxLevel = std::max(maxLevel, row.level);
+    }
+    int level = areaItemLevel.has_value() ? std::min(areaItemLevel->level + 1, maxLevel) : 1;
     return this->getAreaItemLevel(areaItem.id, level);
 }
 
 ShopItem AreaItemService::getShopItem(const AreaItemLevel &areaItemLevel)
 {
     auto& shopItems = this->dataProvider.masterData->shopItems;
-    // 目前的规律是1-10级按顺序在1001～1550、11-15级在1551～1825
-    int idOffset = areaItemLevel.level <= 10
-        ? (1000 + (areaItemLevel.areaItemId - 1) * 10)
-        : (1550 - 10 + (areaItemLevel.areaItemId - 1) * 5);
-    int id = idOffset + areaItemLevel.level;
+    // 56号独立编号；原道具按1-10、11-15、16-20级分段编号。
+    int id = areaItemLevel.areaItemId == 56 ? 2100 + areaItemLevel.level
+        : areaItemLevel.level <= 10 ? 1000 + (areaItemLevel.areaItemId - 1) * 10 + areaItemLevel.level
+        : areaItemLevel.level <= 15 ? 1550 + (areaItemLevel.areaItemId - 1) * 5 + areaItemLevel.level - 10
+        : 1825 + (areaItemLevel.areaItemId - 1) * 5 + areaItemLevel.level - 15;
     return findOrThrow(shopItems, [&](const ShopItem& it) {
         return it.id == id;
     }, [&]() { return "Shop item not found for areaItemId=" + std::to_string(areaItemLevel.areaItemId) + " level=" + std::to_string(areaItemLevel.level); } );
