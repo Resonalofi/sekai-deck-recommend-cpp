@@ -8,6 +8,7 @@ version = "0.5.0"
 
 [tool.scikit-build]
 build-dir = "build/{wheel_tag}"
+sdist.exclude = ["**/.DS_Store", "**/AGENTS.md"]
 
 [tool.scikit-build.cmake.define]
 CMAKE_MSVC_DEBUG_INFORMATION_FORMAT = "Embedded"
