@@ -232,7 +232,9 @@ void BaseDeckRecommend::findBestCardsDFS(
             const bool useMixedUnitPower = member != 5 || dfsInfo.deckCommonUnitMask == 0;
             const auto power = useMixedUnitPower
                 ? honorBonus + dfsInfo.deckMixedUnitPowerBounds[member == 5 && dfsInfo.deckAllSameAttr]
-                : this->deckCalculator.getDeckTotalPowerByCards(deckCards, honorBonus);
+                : this->deckCalculator.getDeckTotalPowerByCards(
+                    deckCards, honorBonus, cfg.multiUnitBonusEvaluation
+                );
             if (power < dfsInfo.effectivePowerFloor()) {
                 return;
             }

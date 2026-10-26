@@ -72,6 +72,9 @@ struct DeckRecommendConfig {
 
     // 全当期：视为拥有本活动全部加成卡（bonusRate>0）加入卡池，由算法自行取舍
     bool ownAllBonusCards = false;
+    // 限定全当期补入卡牌的组合和属性
+    std::optional<int> bonusCardUnit = std::nullopt;
+    std::optional<int> bonusCardAttr = std::nullopt;
     // 全当期卡统一套用的单卡配置，与普通单卡配置同构（singleCardConfig 里的显式配置优先）
     CardConfig bonusCardConfig = {.rankMax = true, .episodeRead = true};
 
@@ -80,6 +83,8 @@ struct DeckRecommendConfig {
 
     // 是否保持bfes花前花后状态
     bool keepAfterTrainingState = false;
+
+    MultiUnitBonusEvaluation multiUnitBonusEvaluation = MultiUnitBonusEvaluation::ByDeck;
 
     // 指定协力队友实效
     std::optional<int> multiTeammateScoreUp = std::nullopt;
@@ -126,10 +131,9 @@ class BaseDeckRecommend {
     DataProvider dataProvider;
     DeckCalculator deckCalculator;
     CardCalculator cardCalculator;
-    CardService cardService;
     LiveCalculator liveCalculator;
     AreaItemService areaItemService;
-    // 当前推荐请求的有效用户卡状态；包含全当期生成的虚拟卡，供 WL sub 物化复用。
+    // WL支援卡状态：保留实际专精和技能等级，包含全当期补入的虚拟卡。
     std::shared_ptr<const std::unordered_map<int, UserCard>> effectiveUserCards{};
 
 public:
@@ -138,7 +142,6 @@ public:
         : dataProvider(dataProvider),
           deckCalculator(dataProvider),
           cardCalculator(dataProvider),
-          cardService(dataProvider),
           liveCalculator(dataProvider),
           areaItemService(dataProvider) {}
 
@@ -150,9 +153,8 @@ public:
 
     /**
      * 全当期：把本活动全部加成卡（bonusRate>0）视为已拥有。
-     * 未拥有的生成虚拟卡加入卡池，并把 bonusCardConfig 直接套用到卡牌状态上
-     * （支援卡组读的是卡牌原始状态，这样WL支援加成同样按该配置计算）。
-     * 已在 singleCardConfig 里显式配置过的卡牌不受影响。
+     * 未拥有的生成虚拟卡加入卡池，养成配置通过 singleCardConfig 应用于主队。
+     * 显式单卡配置优先；支援保留实际专精和技能等级。
      */
     void addEventBonusCardsToPool(
         int eventId,

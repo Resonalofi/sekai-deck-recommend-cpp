@@ -121,12 +121,14 @@ public:
 
     DeckPowerCalculation getDeckPowerByCards(
         const std::vector<const CardDetail*>& cardDetails,
-        int honorBonus = 0
+        int honorBonus = 0,
+        MultiUnitBonusEvaluation multiUnitEval = MultiUnitBonusEvaluation::ByDeck
     );
 
     int getDeckTotalPowerByCards(
         const std::vector<const CardDetail*>& cardDetails,
-        int honorBonus = 0
+        int honorBonus = 0,
+        MultiUnitBonusEvaluation multiUnitEval = MultiUnitBonusEvaluation::ByDeck
     );
 
     void forEachDeckState(
@@ -139,7 +141,8 @@ public:
         SkillReferenceChooseStrategy skillReferenceChooseStrategy = SkillReferenceChooseStrategy::Average,
         bool keepAfterTrainingState = false,
         bool bestSkillAsLeader = true,
-        bool slimPower = false
+        bool slimPower = false,
+        MultiUnitBonusEvaluation multiUnitEval = MultiUnitBonusEvaluation::ByDeck
     );
 
     void forEachMultiLiveScoreState(
@@ -151,7 +154,8 @@ public:
         std::optional<int> eventId = std::nullopt,
         SkillReferenceChooseStrategy skillReferenceChooseStrategy = SkillReferenceChooseStrategy::Average,
         bool keepAfterTrainingState = false,
-        bool bestSkillAsLeader = true
+        bool bestSkillAsLeader = true,
+        MultiUnitBonusEvaluation multiUnitEval = MultiUnitBonusEvaluation::ByDeck
     );
 
     /**
@@ -174,7 +178,8 @@ public:
         SkillReferenceChooseStrategy skillReferenceChooseStrategy = SkillReferenceChooseStrategy::Average,
         bool keepAfterTrainingState = false,
         bool bestSkillAsLeader = true,
-        std::optional<int> selectedStatusMask = std::nullopt
+        std::optional<int> selectedStatusMask = std::nullopt,
+        MultiUnitBonusEvaluation multiUnitEval = MultiUnitBonusEvaluation::ByDeck
     );
 };
    

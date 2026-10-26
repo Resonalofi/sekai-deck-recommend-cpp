@@ -20,6 +20,7 @@ std::vector<MysekaiGateBonus> MySekaiService::getMysekaiGateBonuses()
     auto& mysekaiGates = this->dataProvider.masterData->mysekaiGates;
     auto& mysekaiGateLevels = this->dataProvider.masterData->mysekaiGateLevels;
     std::vector<MysekaiGateBonus> result = {};
+    result.reserve(userMysekaiGates.size());
     for (auto& it : userMysekaiGates) {
         auto& gate = findOrThrow(mysekaiGates, [&](const MysekaiGate& g) {
             return g.id == it.mysekaiGateId;
@@ -29,6 +30,7 @@ std::vector<MysekaiGateBonus> MySekaiService::getMysekaiGateBonuses()
         }, [&]() { return "Mysekai gate level not found for mysekaiGateId=" + std::to_string(it.mysekaiGateId) + " level=" + std::to_string(it.mysekaiGateLevel); });
         result.push_back(MysekaiGateBonus{
             gate.unit,
+            it.mysekaiGateLevel,
             gateLevel.powerBonusRate
         });
     }

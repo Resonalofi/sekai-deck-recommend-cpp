@@ -462,6 +462,7 @@ struct PyDeckRecommendOptions {
     std::optional<int> music_id;
     std::optional<std::string> music_diff;
     std::optional<int> event_id;
+    std::optional<std::string> event_me_unit;
     std::optional<std::string> event_attr;
     std::optional<std::string> event_unit;
     std::optional<std::string> event_type;
@@ -482,10 +483,13 @@ struct PyDeckRecommendOptions {
     std::optional<std::vector<int>> fixed_cards;
     std::optional<std::vector<int>> fixed_characters;
     std::optional<bool> own_all_bonus_cards;
+    std::optional<std::string> bonus_card_attr;
+    std::optional<std::string> bonus_card_unit;
     std::optional<PyCardConfig> bonus_card_config;
     std::optional<std::vector<int>> target_bonus_list;
     std::optional<std::string> skill_reference_choose_strategy;
     std::optional<bool> keep_after_training_state;
+    std::optional<std::string> multi_unit_bonus_evaluation;
     std::optional<int> multi_live_teammate_score_up;
     std::optional<int> multi_live_teammate_power;
     std::optional<bool> best_skill_as_leader;
@@ -522,6 +526,8 @@ struct PyDeckRecommendOptions {
         if (music_id.has_value())              result["music_id"] = music_id.value();
         if (music_diff.has_value())            result["music_diff"] = music_diff.value();
         if (event_id.has_value())              result["event_id"] = event_id.value();
+        if (event_me_unit.has_value())
+            result["event_me_unit"] = event_me_unit.value();
         if (event_attr.has_value())            result["event_attr"] = event_attr.value();
         if (event_unit.has_value())            result["event_unit"] = event_unit.value();
         if (event_type.has_value())            result["event_type"] = event_type.value();
@@ -560,6 +566,10 @@ struct PyDeckRecommendOptions {
             result["fixed_characters"] = fixed_characters.value();
         if (own_all_bonus_cards.has_value())
             result["own_all_bonus_cards"] = own_all_bonus_cards.value();
+        if (bonus_card_attr.has_value())
+            result["bonus_card_attr"] = bonus_card_attr.value();
+        if (bonus_card_unit.has_value())
+            result["bonus_card_unit"] = bonus_card_unit.value();
         if (bonus_card_config.has_value())
             result["bonus_card_config"] = bonus_card_config->to_dict();
         if (target_bonus_list.has_value())
@@ -568,6 +578,8 @@ struct PyDeckRecommendOptions {
             result["skill_reference_choose_strategy"] = skill_reference_choose_strategy.value();
         if (keep_after_training_state.has_value())
             result["keep_after_training_state"] = keep_after_training_state.value();
+        if (multi_unit_bonus_evaluation.has_value())
+            result["multi_unit_bonus_evaluation"] = multi_unit_bonus_evaluation.value();
         if (multi_live_teammate_score_up.has_value())
             result["multi_live_teammate_score_up"] = multi_live_teammate_score_up.value();
         if (multi_live_teammate_power.has_value())
@@ -609,6 +621,8 @@ struct PyDeckRecommendOptions {
         if (dict.contains("music_id"))              options.music_id = dict["music_id"].cast<int>();
         if (dict.contains("music_diff"))            options.music_diff = dict["music_diff"].cast<std::string>();
         if (dict.contains("event_id"))              options.event_id = dict["event_id"].cast<int>();
+        if (dict.contains("event_me_unit"))
+            options.event_me_unit = dict["event_me_unit"].cast<std::string>();
         if (dict.contains("event_attr"))            options.event_attr = dict["event_attr"].cast<std::string>();
         if (dict.contains("event_unit"))            options.event_unit = dict["event_unit"].cast<std::string>();
         if (dict.contains("event_type"))            options.event_type = dict["event_type"].cast<std::string>();
@@ -649,6 +663,10 @@ struct PyDeckRecommendOptions {
             options.fixed_characters = dict["fixed_characters"].cast<std::vector<int>>();
         if (dict.contains("own_all_bonus_cards"))
             options.own_all_bonus_cards = dict["own_all_bonus_cards"].cast<bool>();
+        if (dict.contains("bonus_card_attr"))
+            options.bonus_card_attr = dict["bonus_card_attr"].cast<std::string>();
+        if (dict.contains("bonus_card_unit"))
+            options.bonus_card_unit = dict["bonus_card_unit"].cast<std::string>();
         if (dict.contains("bonus_card_config"))
             options.bonus_card_config = PyCardConfig::from_dict(dict["bonus_card_config"].cast<py::dict>());
         if (dict.contains("target_bonus_list"))
@@ -657,6 +675,8 @@ struct PyDeckRecommendOptions {
             options.skill_reference_choose_strategy = dict["skill_reference_choose_strategy"].cast<std::string>();
         if (dict.contains("keep_after_training_state"))
             options.keep_after_training_state = dict["keep_after_training_state"].cast<bool>();
+        if (dict.contains("multi_unit_bonus_evaluation"))
+            options.multi_unit_bonus_evaluation = dict["multi_unit_bonus_evaluation"].cast<std::string>();
         if (dict.contains("multi_live_teammate_score_up"))
             options.multi_live_teammate_score_up = dict["multi_live_teammate_score_up"].cast<int>();
         if (dict.contains("multi_live_teammate_power"))
@@ -993,7 +1013,21 @@ class SekaiDeckRecommend {
         bool is_challenge_live = Enums::LiveType::isChallenge(options.liveType);
         
         // eventId
-        if (pyoptions.event_id.has_value()) {
+        if (pyoptions.event_me_unit.has_value()) {
+            if (is_challenge_live || pyoptions.event_id.has_value()
+                || pyoptions.event_attr.has_value() || pyoptions.event_unit.has_value()
+                || pyoptions.world_bloom_event_turn.has_value()
+                || pyoptions.world_bloom_event_group.has_value()
+                || pyoptions.world_bloom_character_id.has_value()
+                || pyoptions.event_type.value_or("marathon") != "marathon")
+                throw std::invalid_argument("event_me_unit requires a marathon simulation without other event selectors.");
+            if (!VALID_UNIT_TYPES.count(pyoptions.event_me_unit.value()))
+                throw std::invalid_argument("Invalid memory event unit: " + pyoptions.event_me_unit.value());
+            options.eventId = options.dataProvider.masterData->getMemoryEventFakeEventId(
+                mapEnum(EnumMap::unit, pyoptions.event_me_unit.value())
+            );
+        }
+        else if (pyoptions.event_id.has_value()) {
             if (is_challenge_live)
                 throw std::invalid_argument("event_id is not valid for challenge live.");
             options.eventId = pyoptions.event_id.value();
@@ -1096,6 +1130,7 @@ class SekaiDeckRecommend {
 
             if (config.target == RecommendTarget::Bonus &&
                 !pyoptions.event_id.has_value() &&
+                !pyoptions.event_me_unit.has_value() &&
                 !pyoptions.world_bloom_event_turn.has_value() &&
                 !pyoptions.event_attr.has_value() &&
                 !pyoptions.event_unit.has_value()) {
@@ -1209,6 +1244,16 @@ class SekaiDeckRecommend {
 
             // 全当期
             config.ownAllBonusCards = pyoptions.own_all_bonus_cards.value_or(false);
+            if (pyoptions.bonus_card_unit.has_value()) {
+                if (!VALID_UNIT_TYPES.count(pyoptions.bonus_card_unit.value()))
+                    throw std::invalid_argument("Invalid bonus card unit: " + pyoptions.bonus_card_unit.value());
+                config.bonusCardUnit = mapEnum(EnumMap::unit, pyoptions.bonus_card_unit.value());
+            }
+            if (pyoptions.bonus_card_attr.has_value()) {
+                if (!VALID_EVENT_ATTRS.count(pyoptions.bonus_card_attr.value()))
+                    throw std::invalid_argument("Invalid bonus card attr: " + pyoptions.bonus_card_attr.value());
+                config.bonusCardAttr = mapEnum(EnumMap::attr, pyoptions.bonus_card_attr.value());
+            }
             if (pyoptions.bonus_card_config.has_value()) {
                 const auto& bonus = pyoptions.bonus_card_config.value();
                 if (bonus.disable.has_value())
@@ -1239,6 +1284,16 @@ class SekaiDeckRecommend {
             // keep after training state
             if (pyoptions.keep_after_training_state.has_value()) {
                 config.keepAfterTrainingState = pyoptions.keep_after_training_state.value();
+            }
+
+            if (pyoptions.multi_unit_bonus_evaluation.has_value()) {
+                const auto& mode = pyoptions.multi_unit_bonus_evaluation.value();
+                if (mode == "force_on")
+                    config.multiUnitBonusEvaluation = MultiUnitBonusEvaluation::ForceOn;
+                else if (mode == "force_off")
+                    config.multiUnitBonusEvaluation = MultiUnitBonusEvaluation::ForceOff;
+                else if (mode != "by_deck")
+                    throw std::invalid_argument("Invalid multi unit bonus evaluation: " + mode);
             }
 
             // multi live teammate score up
@@ -1784,6 +1839,7 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
         .def_readwrite("music_id", &PyDeckRecommendOptions::music_id)
         .def_readwrite("music_diff", &PyDeckRecommendOptions::music_diff)
         .def_readwrite("event_id", &PyDeckRecommendOptions::event_id)
+        .def_readwrite("event_me_unit", &PyDeckRecommendOptions::event_me_unit)
         .def_readwrite("event_attr", &PyDeckRecommendOptions::event_attr)
         .def_readwrite("event_unit", &PyDeckRecommendOptions::event_unit)
         .def_readwrite("event_type", &PyDeckRecommendOptions::event_type)
@@ -1804,10 +1860,13 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
         .def_readwrite("fixed_cards", &PyDeckRecommendOptions::fixed_cards)
         .def_readwrite("fixed_characters", &PyDeckRecommendOptions::fixed_characters)
         .def_readwrite("own_all_bonus_cards", &PyDeckRecommendOptions::own_all_bonus_cards)
+        .def_readwrite("bonus_card_attr", &PyDeckRecommendOptions::bonus_card_attr)
+        .def_readwrite("bonus_card_unit", &PyDeckRecommendOptions::bonus_card_unit)
         .def_readwrite("bonus_card_config", &PyDeckRecommendOptions::bonus_card_config)
         .def_readwrite("target_bonus_list", &PyDeckRecommendOptions::target_bonus_list)
         .def_readwrite("skill_reference_choose_strategy", &PyDeckRecommendOptions::skill_reference_choose_strategy)
         .def_readwrite("keep_after_training_state", &PyDeckRecommendOptions::keep_after_training_state)
+        .def_readwrite("multi_unit_bonus_evaluation", &PyDeckRecommendOptions::multi_unit_bonus_evaluation)
         .def_readwrite("multi_live_teammate_score_up", &PyDeckRecommendOptions::multi_live_teammate_score_up)
         .def_readwrite("multi_live_teammate_power", &PyDeckRecommendOptions::multi_live_teammate_power)
         .def_readwrite("best_skill_as_leader", &PyDeckRecommendOptions::best_skill_as_leader)
@@ -1972,6 +2031,7 @@ PyDeckRecommendOptions optionsFromJson(const json& data, const std::string& user
     readOptional(data, "music_id", options.music_id);
     readOptional(data, "music_diff", options.music_diff);
     readOptional(data, "event_id", options.event_id);
+    readOptional(data, "event_me_unit", options.event_me_unit);
     readOptional(data, "event_attr", options.event_attr);
     readOptional(data, "event_unit", options.event_unit);
     readOptional(data, "event_type", options.event_type);
@@ -2005,10 +2065,13 @@ PyDeckRecommendOptions optionsFromJson(const json& data, const std::string& user
     readOptional(data, "fixed_cards", options.fixed_cards);
     readOptional(data, "fixed_characters", options.fixed_characters);
     readOptional(data, "own_all_bonus_cards", options.own_all_bonus_cards);
+    readOptional(data, "bonus_card_attr", options.bonus_card_attr);
+    readOptional(data, "bonus_card_unit", options.bonus_card_unit);
     readCardConfig("bonus_card_config", options.bonus_card_config);
     readOptional(data, "target_bonus_list", options.target_bonus_list);
     readOptional(data, "skill_reference_choose_strategy", options.skill_reference_choose_strategy);
     readOptional(data, "keep_after_training_state", options.keep_after_training_state);
+    readOptional(data, "multi_unit_bonus_evaluation", options.multi_unit_bonus_evaluation);
     readOptional(data, "multi_live_teammate_score_up", options.multi_live_teammate_score_up);
     readOptional(data, "multi_live_teammate_power", options.multi_live_teammate_power);
     readOptional(data, "best_skill_as_leader", options.best_skill_as_leader);

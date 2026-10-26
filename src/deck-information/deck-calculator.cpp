@@ -334,7 +334,8 @@ bool DeckCalculator::isMultiUnitDeck(const std::vector<const CardDetail*>& cards
 
 DeckPowerCalculation DeckCalculator::getDeckPowerByCards(
     const std::vector<const CardDetail*>& cardDetails,
-    int honorBonus
+    int honorBonus,
+    MultiUnitBonusEvaluation multiUnitEval
 )
 {
     DeckPowerCalculation result{};
@@ -349,7 +350,8 @@ DeckPowerCalculation DeckCalculator::getDeckPowerByCards(
         }
     }
     const bool multiUnit = !cardDetails.empty() && !cardDetails.front()->multiUnitPower.empty()
-        && isMultiUnitDeck(cardDetails);
+        && multiUnitEval != MultiUnitBonusEvaluation::ForceOff
+        && (multiUnitEval == MultiUnitBonusEvaluation::ForceOn || isMultiUnitDeck(cardDetails));
     for (size_t i = 0; i < cardDetails.size(); ++i) {
         const auto& card = *cardDetails[i];
         DeckCardPowerDetail power{};
@@ -378,7 +380,8 @@ DeckPowerCalculation DeckCalculator::getDeckPowerByCards(
 
 int DeckCalculator::getDeckTotalPowerByCards(
     const std::vector<const CardDetail*>& cardDetails,
-    int honorBonus
+    int honorBonus,
+    MultiUnitBonusEvaluation multiUnitEval
 )
 {
     const bool fullDeck = cardDetails.size() == 5;
@@ -391,7 +394,9 @@ int DeckCalculator::getDeckTotalPowerByCards(
     }
 
     int total = honorBonus;
-    if (!cardDetails.empty() && !cardDetails.front()->multiUnitPower.empty() && isMultiUnitDeck(cardDetails)) {
+    if (!cardDetails.empty() && !cardDetails.front()->multiUnitPower.empty()
+        && multiUnitEval != MultiUnitBonusEvaluation::ForceOff
+        && (multiUnitEval == MultiUnitBonusEvaluation::ForceOn || isMultiUnitDeck(cardDetails))) {
         for (const auto* card : cardDetails)
             total += card->getMultiUnitPower(commonUnitMask, allSameAttr).total;
         return total;
@@ -430,7 +435,8 @@ void DeckCalculator::forEachDeckState(
     SkillReferenceChooseStrategy skillReferenceChooseStrategy,
     bool keepAfterTrainingState,
     bool bestSkillAsLeader,
-    bool slimPower
+    bool slimPower,
+    MultiUnitBonusEvaluation multiUnitEval
 )
 {
     // 活动加成
@@ -475,7 +481,7 @@ void DeckCalculator::forEachDeckState(
         powerCalculation.total.total = total;
     }
     else {
-        powerCalculation = getDeckPowerByCards(cardDetails, honorBonus);
+        powerCalculation = getDeckPowerByCards(cardDetails, honorBonus, multiUnitEval);
     }
     if (eventType == Enums::EventType::world_bloom &&
         this->dataProvider.masterData->getWorldBloomEventTurn(eventId.value_or(0)) == 3) {
@@ -528,7 +534,8 @@ void DeckCalculator::forEachMultiLiveScoreState(
     std::optional<int> eventId,
     SkillReferenceChooseStrategy skillReferenceChooseStrategy,
     bool keepAfterTrainingState,
-    bool bestSkillAsLeader
+    bool bestSkillAsLeader,
+    MultiUnitBonusEvaluation multiUnitEval
 ) {
     const auto eventBonus = getDeckBonus(cardDetails, eventType, eventId).totalBonus;
 
@@ -556,7 +563,8 @@ void DeckCalculator::forEachMultiLiveScoreState(
             ++unitCounts[std::countr_zero(units)];
     }
     const bool multiUnit = !cardDetails.empty() && !cardDetails.front()->multiUnitPower.empty()
-        && isMultiUnitDeck(cardDetails);
+        && multiUnitEval != MultiUnitBonusEvaluation::ForceOff
+        && (multiUnitEval == MultiUnitBonusEvaluation::ForceOn || isMultiUnitDeck(cardDetails));
     int power = honorBonus;
     for (const auto* card : cardDetails) {
         if (multiUnit) {
@@ -617,7 +625,8 @@ std::vector<DeckDetail> DeckCalculator::getDeckDetailByCards(
     SkillReferenceChooseStrategy skillReferenceChooseStrategy,
     bool keepAfterTrainingState,
     bool bestSkillAsLeader,
-    std::optional<int> selectedStatusMask
+    std::optional<int> selectedStatusMask,
+    MultiUnitBonusEvaluation multiUnitEval
 )
 {
     std::vector<DeckDetail> ret{};
@@ -694,7 +703,9 @@ std::vector<DeckDetail> DeckCalculator::getDeckDetailByCards(
         eventId,
         skillReferenceChooseStrategy,
         keepAfterTrainingState,
-        bestSkillAsLeader
+        bestSkillAsLeader,
+        /*slimPower=*/false,
+        multiUnitEval
     );
 
     return ret;

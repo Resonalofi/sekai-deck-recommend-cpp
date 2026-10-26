@@ -122,6 +122,7 @@ class DeckRecommendOptions:
         music_id (int): Music ID
         music_diff (str): Music difficulty in ["easy", "normal", "hard", "expert", "master", "append"]
         event_id (int): Event ID, leave it None to use no-event or unit-attr-specificed recommendation
+        event_me_unit (str): Memory-event simulation: all attributes +25%, native unit characters +75% total before master-rank bonuses. Marathon only, mutually exclusive with other event selectors.
         event_attr (str): Attribute of unit-attr-specificed recommendation, only available when event_id is None. In ["mysterious", "cute", "cool", "pure", "happy"]
         event_unit (str): Unit of unit-attr-specificed recommendation, only available when event_id is None. In ["light_sound", "idol", "street", "theme_park", "school_refusal", "piapro"]
         event_type (str): Event type of unit-attr-specificed/no-event recommendation, only available when event_id is None. In ["marathon", "cheerful_carnival"]
@@ -142,10 +143,13 @@ class DeckRecommendOptions:
         fixed_cards (List[int]): List of card IDs that always included in the deck, default is None
         fixed_characters (List[int]): List of character IDs that always included in the deck (first is always leader), cannot used in challenge live, cannot used with fixed_cards together, default is None
         own_all_bonus_cards (bool): Treat all bonus cards (bonusRate > 0) of the event as owned, adding virtual cards to the pool, default is False
-        bonus_card_config (DeckRecommendCardConfig): Card config applied to every bonus card when own_all_bonus_cards is set (entries in single_card_configs take precedence), default is level_max/episode_read only
+        bonus_card_attr (str): Restrict own_all_bonus_cards additions to this attribute; does not filter existing owned cards.
+        bonus_card_unit (str): Restrict own_all_bonus_cards additions to this unit, including associated virtual singers; does not filter existing owned cards.
+        bonus_card_config (DeckRecommendCardConfig): Card config applied to every bonus card when own_all_bonus_cards is set (entries in single_card_configs take precedence), default is level_max/episode_read only; WL support keeps actual master rank and skill level
         target_bonus_list (List[int]): List of target event bonus, required when target is "bonus". For WorldLink final chapters, leader-only bonuses count for the first card (the leader) of each deck
         skill_reference_choose_strategy (str): Strategy for bfes skill reference choose in ["average", "max", "min"], default is "average"
         keep_after_training_state (bool): Whether to keep after-training state of bfes cards, default is False
+        multi_unit_bonus_evaluation (str): Area item multi_unit evaluation: "by_deck" (default), "force_on", or "force_off".
         multi_live_teammate_score_up (int): Score up of single multi-live teammate, default is None (None means copying self score up)
         multi_live_teammate_power (int): Power of single multi-live teammate, default is None (None means copying self power)
         best_skill_as_leader (bool): Whether to use the best skill card as leader, default is True
@@ -170,6 +174,7 @@ class DeckRecommendOptions:
     music_id: int
     music_diff: str
     event_id: Optional[int]
+    event_me_unit: Optional[str]
     event_attr: Optional[str]
     event_unit: Optional[str]
     event_type: Optional[str]
@@ -190,10 +195,13 @@ class DeckRecommendOptions:
     fixed_cards: Optional[List[int]]
     fixed_characters: Optional[List[int]]
     own_all_bonus_cards: Optional[bool]
+    bonus_card_attr: Optional[str]
+    bonus_card_unit: Optional[str]
     bonus_card_config: Optional[DeckRecommendCardConfig]
     target_bonus_list: Optional[List[int]]
     skill_reference_choose_strategy: Optional[str]
     keep_after_training_state: Optional[bool]
+    multi_unit_bonus_evaluation: Optional[str]
     multi_live_teammate_score_up: Optional[int]
     multi_live_teammate_power: Optional[int]
     best_skill_as_leader: Optional[bool]

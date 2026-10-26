@@ -10,7 +10,9 @@ std::optional<CardDetail> CardCalculator::getCardDetail(
     const std::optional<EventConfig>& eventConfig,
     bool hasCanvasBonus,
     const std::vector<MysekaiGateBonus>& userGateBonuses,
-    std::optional<double> scoreUpLimit
+    std::optional<double> scoreUpLimit,
+    bool multiUnitPowerEnabled,
+    bool supportDeck
 )
 {
     const auto& cards = this->dataProvider.masterData->cards;
@@ -37,6 +39,12 @@ std::optional<CardDetail> CardCalculator::getCardDetail(
     if (cfg.disable)
         return std::nullopt;
 
+    // 主队的专精、技能模拟不改变WL支援的实际养成。
+    if (supportDeck) {
+        cfg.masterRank.reset();
+        cfg.skillLevel.reset();
+    }
+
     // 判断强制使用画布
     hasCanvasBonus |= cfg.canvas;
 
@@ -58,7 +66,7 @@ std::optional<CardDetail> CardCalculator::getCardDetail(
     std::vector<DeckCardPowerDetail> multiUnitPower;
     auto power = this->powerCalculator.getCardPower(
         userCard0, card, units, userAreaItemLevels, hasCanvasBonus, userGateBonuses,
-        fixtureBonusLimit, &multiUnitPower
+        fixtureBonusLimit, multiUnitPowerEnabled ? &multiUnitPower : nullptr
     );
     std::array<std::array<int, 4>, 2> powerTotals{};
     int unitIndex = 0;
@@ -134,12 +142,15 @@ std::vector<CardDetail> CardCalculator::batchGetCardDetail(
     const std::unordered_map<int, CardConfig>& singleCardConfig,
     const std::optional<EventConfig>& eventConfig,
     const std::vector<AreaItemLevel>& areaItemLevels,
-    std::optional<double> scoreUpLimit
+    std::optional<double> scoreUpLimit,
+    bool multiUnitPowerEnabled
 )
 {
     std::vector<CardDetail> ret{};
     ret.reserve(userCards.size());
-    auto areaItemLevels0 = areaItemLevels.empty() ? this->areaItemService.getAreaItemLevels() : areaItemLevels;
+    const auto currentAreaItemLevels = areaItemLevels.empty()
+        ? this->areaItemService.getAreaItemLevels() : std::vector<AreaItemLevel>{};
+    const auto& areaItemLevels0 = areaItemLevels.empty() ? currentAreaItemLevels : areaItemLevels;
     // 自定义世界专项加成
     auto userCanvasBonusCards = this->mysekaiService.getMysekaiCanvasBonusCards();
     auto userGateBonuses = this->mysekaiService.getMysekaiGateBonuses();
@@ -148,7 +159,7 @@ std::vector<CardDetail> CardCalculator::batchGetCardDetail(
         auto cardDetail = this->getCardDetail(
             userCard, areaItemLevels0, config, singleCardConfig, eventConfig, 
             userCanvasBonusCards.find(userCard.cardId) != userCanvasBonusCards.end(),
-            userGateBonuses, scoreUpLimit
+            userGateBonuses, scoreUpLimit, multiUnitPowerEnabled
         );
         if (cardDetail.has_value()) {
             ret.push_back(std::move(cardDetail.value()));

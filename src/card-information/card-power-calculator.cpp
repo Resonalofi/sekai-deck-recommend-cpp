@@ -30,10 +30,10 @@ CardPowerDetailMap CardPowerCalculator::getCardPower(
         power = getPower(card, basePower, characterBonus, fixtureBonus, gateBonus, userAreaItemLevels, unit, false, false);
         ret.set(unit, 1, 1, power.total, power);
     }
-    bool hasMultiUnitEffect = std::any_of(userAreaItemLevels.begin(), userAreaItemLevels.end(), [](const AreaItemLevel& it) {
+    bool hasMultiUnitEffect = multiUnitPower != nullptr && std::any_of(userAreaItemLevels.begin(), userAreaItemLevels.end(), [](const AreaItemLevel& it) {
         return it.targetUnit == Enums::Unit::multi_unit;
     });
-    if (multiUnitPower != nullptr && hasMultiUnitEffect) {
+    if (hasMultiUnitEffect) {
         // getCardUnits: [支援组合(可选), 角色组合]
         int characterUnit = cardUnits.back();
         int supportUnit = cardUnits.size() > 1 ? cardUnits.front() : Enums::Unit::none;
@@ -312,13 +312,19 @@ int CardPowerCalculator::getFixtureBonusPower(const BasePower &basePower, int ch
 
 int CardPowerCalculator::getGateBonusPower(const BasePower &basePower, const std::vector<MysekaiGateBonus> &userGateBonuses, const std::vector<int> &cardUnits)
 {
-    bool isOnlyPiapro = cardUnits.size() == 1 && cardUnits[0] == Enums::Unit::piapro;
-    double powerBonusRate = 0;
-    for (auto& bonus : userGateBonuses) {
-        if (isOnlyPiapro || std::find(cardUnits.begin(), cardUnits.end(), bonus.unit) != cardUnits.end()) {
-            powerBonusRate = std::max(powerBonusRate, bonus.powerBonusRate);
+    // getCardUnits 的第一项是应援组合（如有），否则是角色原始组合。
+    const int unit = cardUnits.front();
+    const MysekaiGateBonus* selected = nullptr;
+    for (const auto& bonus : userGateBonuses) {
+        if (unit == Enums::Unit::piapro) {
+            if (selected == nullptr || bonus.level > selected->level)
+                selected = &bonus;
+        } else if (bonus.unit == unit) {
+            selected = &bonus;
+            break;
         }
     }
+    const double powerBonusRate = selected == nullptr ? 0.0 : selected->powerBonusRate;
     // 按各个综合分别计算加成，其中powerBonusRate单位是1%
     double total = sumPower(basePower) * powerBonusRate * 0.01;
     return std::floor(total);

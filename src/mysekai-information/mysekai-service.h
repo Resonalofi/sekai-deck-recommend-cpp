@@ -7,6 +7,7 @@
 
 struct MysekaiGateBonus {
     int unit;
+    int level;
     double powerBonusRate;
 };
 
@@ -35,7 +36,7 @@ public:
 
     /**
      * 获得自定义世界的大门加成
-     * 计算逻辑：原创角色看组合；如果V有支援组合，看支援组合；如果V没有支援组合，取加成最大值
+     * 原创角色看组合，V家有应援组合时看应援组合，否则取等级最高的大门。
      */
     std::vector<MysekaiGateBonus> getMysekaiGateBonuses();
 

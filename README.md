@@ -124,6 +124,26 @@ result = sekai_deck_recommend.recommend(options)
 
 For more details of options, please refer the docstring of `sekai_deck_recommend.DeckRecommendOptions`
 
+To simulate a marathon memory event, replace `event_id` with `event_me_unit`:
+
+```python
+options.event_id = None
+options.event_me_unit = "street"
+```
+
+All attributes receive a 25% base event bonus; native characters of the selected
+unit receive 75% total before master-rank bonuses. This option cannot be combined
+with other event selectors or challenge live.
+
+When `own_all_bonus_cards` is enabled, `bonus_card_unit` and `bonus_card_attr`
+restrict which event cards are added and receive `bonus_card_config`. Explicit
+`single_card_configs` take precedence, including for unowned cards; existing owned
+cards remain in the pool.
+
+`multi_unit_bonus_evaluation` controls multi-unit area item effects: `"by_deck"`
+(default) uses the actual deck composition, `"force_on"` applies multi-unit rules,
+and `"force_off"` skips their calculation and precomputation.
+
 ## Simulation and WorldLink details
 
 The recommendation options accept partial override dictionaries. Before calculation,
@@ -158,6 +178,14 @@ skill level, episode status, training image, power breakdown, and support bonus.
 The main deck also exposes `event_diff_attr_bonus_rate` and
 `event_shuffle_unit_bonus_rate`; each main card's `event_bonus_rate` is its actual
 position-dependent event bonus.
+
+Master-rank and skill-level overrides apply to the main deck. WorldLink support
+uses the cards' actual master ranks and skill levels; level, episode, and canvas
+simulation still applies. Cards added by `own_all_bonus_cards` start at master
+rank 0 and skill level 1 for support.
+
+MySekai gate bonuses follow the card's associated unit when present; virtual
+singers without an associated unit use the highest-level owned gate.
 
 ## Acknowledgments
 - Original implementation by [xfl03/sekai-calculator](https://github.com/xfl03/sekai-calculator)

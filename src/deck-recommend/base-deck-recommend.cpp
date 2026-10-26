@@ -367,7 +367,8 @@ BestPermutationResult BaseDeckRecommend::getBestPermutation(
             eventId,
             config.skillReferenceChooseStrategy,
             config.keepAfterTrainingState,
-            bestSkillAsLeader
+            bestSkillAsLeader,
+            config.multiUnitBonusEvaluation
         );
     }
     else {
@@ -394,7 +395,8 @@ BestPermutationResult BaseDeckRecommend::getBestPermutation(
             config.skillReferenceChooseStrategy,
             config.keepAfterTrainingState,
             bestSkillAsLeader,
-            /*slimPower=*/true
+            /*slimPower=*/true,
+            config.multiUnitBonusEvaluation
         );
     }
     return context.result;
@@ -423,7 +425,8 @@ RecommendDeck BaseDeckRecommend::materializeCandidate(
         config.skillReferenceChooseStrategy,
         config.keepAfterTrainingState,
         bestSkillAsLeader,
-        candidate.statusMask
+        candidate.statusMask,
+        config.multiUnitBonusEvaluation
     );
     return RecommendDeck(deckDetails.front(), config.target, candidate.score);
 }
@@ -433,10 +436,13 @@ void BaseDeckRecommend::materializeSupportDecks(
     const DeckRecommendConfig& config,
     const EventConfig& eventConfig
 ) {
-    if (eventConfig.eventType != Enums::EventType::world_bloom)
+    if (eventConfig.eventType != Enums::EventType::world_bloom || config.target == RecommendTarget::Bonus)
         return;
 
     const auto areaItemLevels = areaItemService.getAreaItemLevels();
+    MySekaiService mysekaiService(dataProvider);
+    const auto canvasBonusCards = mysekaiService.getMysekaiCanvasBonusCards();
+    const auto gateBonuses = mysekaiService.getMysekaiGateBonuses();
     const auto scoreUpLimit = isFinalChapterEvent(eventConfig.eventId)
         ? std::optional<double>(140.0)
         : std::nullopt;
@@ -450,6 +456,7 @@ void BaseDeckRecommend::materializeSupportDecks(
             ? deck.cards.front().characterId
             : eventConfig.specialCharacterId;
         supportDeck.bonus = deck.supportDeckBonus.value_or(0.0);
+        supportDeck.cards.reserve(deck.supportDeckCards->size());
 
         EventConfig supportEventConfig = eventConfig;
         supportEventConfig.specialCharacterId = supportDeck.characterId;
@@ -457,14 +464,15 @@ void BaseDeckRecommend::materializeSupportDecks(
             const auto userCard = effectiveUserCards->find(supportCard.cardId);
             if (userCard == effectiveUserCards->end())
                 continue;
-            const auto details = cardCalculator.batchGetCardDetail(
-                {userCard->second}, config.cardConfig, config.singleCardConfig,
-                supportEventConfig, areaItemLevels, scoreUpLimit
+            const auto details = cardCalculator.getCardDetail(
+                userCard->second, areaItemLevels, config.cardConfig, config.singleCardConfig,
+                supportEventConfig, canvasBonusCards.count(supportCard.cardId) != 0,
+                gateBonuses, scoreUpLimit, /*multiUnitPowerEnabled=*/false, /*supportDeck=*/true
             );
-            if (details.empty())
+            if (!details.has_value())
                 continue;
 
-            const auto& detail = details.front();
+            const auto& detail = details.value();
             const auto& supportPower = detail.power.get(
                 std::countr_zero(detail.unitMask), 1, 1
             );
@@ -570,28 +578,32 @@ void BaseDeckRecommend::addEventBonusCardsToPool(
     for (const auto& eventCard : this->dataProvider.masterData->eventCards) {
         if (eventCard.eventId != eventId || eventCard.bonusRate <= 0)
             continue;
-        // 显式指定的单卡配置优先，这类卡完全不受全当期配置影响
-        if (config.singleCardConfig.count(eventCard.cardId))
-            continue;
-        config.singleCardConfig[eventCard.cardId] = config.bonusCardConfig;
+        if (config.bonusCardUnit.has_value() || config.bonusCardAttr.has_value()) {
+            const auto& card = findOrThrow(dataProvider.masterData->cards, [&](const Card& it) {
+                return it.id == eventCard.cardId;
+            });
+            if (config.bonusCardAttr.has_value() && card.attr != config.bonusCardAttr.value())
+                continue;
+            if (config.bonusCardUnit.has_value()) {
+                const auto unit = config.bonusCardUnit.value();
+                if (unit == Enums::Unit::piapro || card.supportUnit != unit) {
+                    const auto& character = findOrThrow(dataProvider.masterData->gameCharacters,
+                        [&](const GameCharacter& it) { return it.id == card.characterId; });
+                    if (character.unit != unit)
+                        continue;
+                }
+            }
+        }
+        // 单卡配置优先，但不能因此漏掉未拥有的虚拟卡。
+        config.singleCardConfig.try_emplace(eventCard.cardId, config.bonusCardConfig);
 
-        const auto& card = findOrThrow(this->dataProvider.masterData->cards, [&](const Card& it) {
-            return it.id == eventCard.cardId;
-        }, [&]() { return "Card not found for cardId=" + std::to_string(eventCard.cardId); });
-
-        // 支援卡组读的是卡牌原始状态而非单卡配置，所以把配置直接套用到卡牌上，
-        // 让当期卡的专精/技能等级在主队伍与支援卡组两侧一致
         const auto owned = std::find_if(userCards.begin(), userCards.end(), [&](const UserCard& it) {
             return it.cardId == eventCard.cardId;
         });
-        if (owned != userCards.end()) {
-            *owned = this->cardService.applyCardConfig(*owned, card, config.bonusCardConfig);
+        if (owned != userCards.end())
             continue;
-        }
         // 未拥有的生成虚拟卡加入卡池
-        userCards.push_back(this->cardService.applyCardConfig(
-            makeVirtualUserCard(eventCard.cardId), card, config.bonusCardConfig
-        ));
+        userCards.push_back(makeVirtualUserCard(eventCard.cardId));
     }
 }
 
@@ -604,26 +616,31 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
 {
     this->dataProvider.init();
 
-    auto effectiveUserCardsSnapshot = std::make_shared<std::unordered_map<int, UserCard>>();
-    for (const auto& userCard : userCards) {
-        const auto cardIt = std::find_if(
-            dataProvider.masterData->cards.begin(),
-            dataProvider.masterData->cards.end(),
-            [&userCard](const Card& card) { return card.id == userCard.cardId; }
-        );
-        if (cardIt == dataProvider.masterData->cards.end())
-            continue;
-        CardConfig cardConfig{};
-        if (config.singleCardConfig.count(userCard.cardId))
-            cardConfig = config.singleCardConfig.at(userCard.cardId);
-        else if (config.cardConfig.count(cardIt->cardRarityType))
-            cardConfig = config.cardConfig.at(cardIt->cardRarityType);
-        if (!cardConfig.disable)
-            (*effectiveUserCardsSnapshot)[userCard.cardId] = cardService.applyCardConfig(
-                userCard, *cardIt, cardConfig
-            );
+    const bool needsSupportDeck = eventConfig.eventType == Enums::EventType::world_bloom
+        && config.target != RecommendTarget::Bonus;
+    effectiveUserCards.reset();
+    if (needsSupportDeck) {
+        auto snapshot = std::make_shared<std::unordered_map<int, UserCard>>();
+        snapshot->reserve(userCards.size());
+        for (const auto& userCard : userCards) {
+            const auto card = std::find_if(dataProvider.masterData->cards.begin(),
+                dataProvider.masterData->cards.end(),
+                [&](const Card& card) { return card.id == userCard.cardId; });
+            if (card == dataProvider.masterData->cards.end())
+                continue;
+            bool disabled = false;
+            if (const auto single = config.singleCardConfig.find(userCard.cardId);
+                single != config.singleCardConfig.end())
+                disabled = single->second.disable;
+            else if (const auto rarity = config.cardConfig.find(card->cardRarityType);
+                rarity != config.cardConfig.end())
+                disabled = rarity->second.disable;
+            if (disabled)
+                continue;
+            snapshot->emplace(userCard.cardId, userCard);
+        }
+        effectiveUserCards = std::move(snapshot);
     }
-    effectiveUserCards = std::move(effectiveUserCardsSnapshot);
 
     // 暂不支持同时指定固定卡牌和固定角色
     if (config.fixedCards.size() && config.fixedCharacters.size())
@@ -643,32 +660,26 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
 
     auto cards = cardCalculator.batchGetCardDetail(
         userCards, config.cardConfig, config.singleCardConfig, 
-        eventConfig, areaItemLevels, scoreUpLimit
+        eventConfig, areaItemLevels, scoreUpLimit,
+        config.multiUnitBonusEvaluation != MultiUnitBonusEvaluation::ForceOff
     );
 
     // 归类支援卡组；索引只需覆盖前 32 位，实际最多取 25 张并排除 5 张主卡。
     SupportDeckMap supportCards{};
     int maxSupportCardId = 0;
-    if (isFinalChapterEvent(eventConfig.eventId) ||
-        eventConfig.eventType == Enums::EventType::world_bloom) {
-        for (const auto& card : userCards)
-            maxSupportCardId = std::max(maxSupportCardId, card.cardId);
+    if (needsSupportDeck) {
+        for (const auto& [cardId, card] : *effectiveUserCards)
+            maxSupportCardId = std::max(maxSupportCardId, cardId);
     }
-    std::unordered_set<int> supportEligibleCardIds{};
-    supportEligibleCardIds.reserve(cards.size());
-    for (const auto& card : cards)
-        supportEligibleCardIds.insert(card.cardId);
     const auto buildSupportCards = [&](int specialCharacterId) {
         SupportDeckCards result;
-        result.cards.reserve(userCards.size());
-        for (const auto& card : userCards) {
-            if (!supportEligibleCardIds.count(card.cardId) || !effectiveUserCards->count(card.cardId))
-                continue;
+        result.cards.reserve(effectiveUserCards->size());
+        for (const auto& [cardId, card] : *effectiveUserCards) {
             result.cards.push_back(this->cardCalculator.getSupportDeckCard(
-                effectiveUserCards->at(card.cardId), eventConfig.eventId, specialCharacterId
+                card, eventConfig.eventId, specialCharacterId
             ));
         }
-        std::stable_sort(result.cards.begin(), result.cards.end(), [](const SupportDeckCard& a, const SupportDeckCard& b) {
+        std::sort(result.cards.begin(), result.cards.end(), [](const SupportDeckCard& a, const SupportDeckCard& b) {
             if (a.bonus != b.bonus)
                 return a.bonus > b.bonus;
             return a.cardId < b.cardId;
@@ -679,11 +690,11 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
             result.topRankByCardId[result.cards[i].cardId] = static_cast<uint8_t>(i);
         return result;
     };
-    if (isFinalChapterEvent(eventConfig.eventId)) {
+    if (needsSupportDeck && isFinalChapterEvent(eventConfig.eventId)) {
         // 终章对每个角色都算一个支援卡组排序
         for (int i = 1; i <= 26; i++)
             supportCards[i] = buildSupportCards(i);
-    } else if(eventConfig.eventType == Enums::EventType::world_bloom) {
+    } else if (needsSupportDeck) {
         // 普通wl只算一个支援卡组排序
         supportCards[0] = buildSupportCards(eventConfig.specialCharacterId);
     }
@@ -714,7 +725,8 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
             auto uc = makeVirtualUserCard(card_id);
             auto card = cardCalculator.batchGetCardDetail(
                 {uc}, config.cardConfig, config.singleCardConfig,
-                eventConfig, areaItemLevels, scoreUpLimit
+                eventConfig, areaItemLevels, scoreUpLimit,
+                config.multiUnitBonusEvaluation != MultiUnitBonusEvaluation::ForceOff
             );
             if (card.size() > 0) {
                 fixedCards.push_back(card[0]);

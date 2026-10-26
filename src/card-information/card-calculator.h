@@ -105,6 +105,8 @@ public:
      * @param hasCanvasBonus 是否拥有自定义世界中的画布
      * @param userGateBonuses 用户拥有的大门加成
      * @param scoreUpLimit 终章应用的技能加分上限
+     * @param multiUnitPowerEnabled 是否预计算多组合家具效果
+     * @param supportDeck 保留支援卡实际专精、技能等级
      */
     std::optional<CardDetail> getCardDetail(
         const UserCard& userCard,
@@ -114,7 +116,9 @@ public:
         const std::optional<EventConfig>& eventConfig = std::nullopt,
         bool hasCanvasBonus = false,
         const std::vector<MysekaiGateBonus>& userGateBonuses = std::vector<MysekaiGateBonus>(),
-        std::optional<double> scoreUpLimit = std::nullopt
+        std::optional<double> scoreUpLimit = std::nullopt,
+        bool multiUnitPowerEnabled = true,
+        bool supportDeck = false
     );
 
     /**
@@ -124,6 +128,7 @@ public:
      * @param eventConfig 活动设置
      * @param areaItemLevels （可选）纳入计算的区域道具等级
      * @param scoreUpLimit 终章应用的技能加分上限
+     * @param multiUnitPowerEnabled 是否预计算多组合家具效果
      */
     std::vector<CardDetail> batchGetCardDetail(
         const std::vector<UserCard>& userCards,
@@ -131,7 +136,8 @@ public:
         const std::unordered_map<int, CardConfig>& singleCardConfig,
         const std::optional<EventConfig>& eventConfig = std::nullopt,
         const std::vector<AreaItemLevel>& areaItemLevels = std::vector<AreaItemLevel>(),
-        std::optional<double> scoreUpLimit = std::nullopt
+        std::optional<double> scoreUpLimit = std::nullopt,
+        bool multiUnitPowerEnabled = true
     );
 
     /**

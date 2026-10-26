@@ -663,6 +663,35 @@ void MasterData::addFakeEvent(int eventType) {
         noEvent.eventType = eventType;
         events.push_back(noEvent);
 
+        // 回忆活动：全属性25%，指定组合原始角色75%（含V家的应援组合判定）。
+        if (eventType == Enums::EventType::marathon) {
+            for (const auto unit : Enums::Unit::specificUnits) {
+                Event event;
+                event.id = getMemoryEventFakeEventId(unit);
+                event.eventType = eventType;
+                events.push_back(event);
+                eventDeckBonuses.push_back(EventDeckBonus{
+                    .eventId = event.id,
+                    .cardAttr = Enums::Attr::null,
+                    .bonusRate = 25.0,
+                });
+                for (const auto& character : gameCharacters) {
+                    if (character.unit != unit)
+                        continue;
+                    for (const auto& characterUnit : gameCharacterUnits) {
+                        if (characterUnit.gameCharacterId != character.id)
+                            continue;
+                        eventDeckBonuses.push_back(EventDeckBonus{
+                            .eventId = event.id,
+                            .gameCharacterUnitId = characterUnit.id,
+                            .cardAttr = Enums::Attr::null,
+                            .bonusRate = 75.0,
+                        });
+                    }
+                }
+            }
+        }
+
         // 指定团名+指定颜色组卡
         for (auto unit : Enums::Unit::specificUnits) {
             for (auto attr : Enums::Attr::specificAttrs) {
@@ -715,6 +744,11 @@ int MasterData::getUnitAttrFakeEventId(int eventType, int unit, int attr) const
         throw std::invalid_argument("Not supported event type for fake event");
     }
     return 1000000 + unit * 100 + attr + eventType * 100000;
+}
+
+int MasterData::getMemoryEventFakeEventId(int unit) const
+{
+    return 4000000 + unit;
 }
 
 int MasterData::getWorldBloomFakeEventId(int worldBloomTurn, int unitOrGroup) const

@@ -31,6 +31,12 @@ struct DeckCardPowerDetail {
 
 // A card has at most two units, each with four unit/attribute states.
 using CardPowerDetailMap = CardDetailMap<DeckCardPowerDetail, 8>;
+
+enum class MultiUnitBonusEvaluation {
+    ByDeck,
+    ForceOn,
+    ForceOff,
+};
   
 class CardPowerCalculator {
 
@@ -151,7 +157,7 @@ public:
 
     /**
      * 自定义世界的大门加成
-     * 如果是无应援的V家角色，按最大加成算
+     * 无应援组合的V家角色按等级最高的大门计算
      * @param basePower 基础综合
      * @param userGateBonuses 当前生效的门加成
      * @param cardUnits 当前卡有的组合
