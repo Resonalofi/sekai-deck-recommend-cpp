@@ -187,6 +187,11 @@ rank 0 and skill level 1 for support.
 MySekai gate bonuses follow the card's associated unit when present; virtual
 singers without an associated unit use the highest-level owned gate.
 
+When WL3 finale data is not yet available, its simulated support bonuses inherit
+the real WL3 chapters' support rules, preserving their character mappings and
+rates once per character/card pair. Current WL3 event cards are then included;
+historical bonuses are not inferred from event-card ownership alone.
+
 ## Acknowledgments
 - Original implementation by [xfl03/sekai-calculator](https://github.com/xfl03/sekai-calculator)
 - JSON parsing by [nlohmann/json](https://github.com/nlohmann/json)

@@ -6,6 +6,52 @@
 
 namespace {
 
+// 搜索只需要总综合力；需要技能计算的入口同时累计组合人数。
+template<bool CountUnits>
+int calculateDeckTotalPower(
+    const std::vector<const CardDetail*>& cards,
+    int honorBonus,
+    MultiUnitBonusEvaluation multiUnitEval,
+    std::array<int, 16>* unitCounts = nullptr
+) {
+    const bool fullDeck = cards.size() == 5;
+    uint16_t commonUnits = fullDeck ? (uint16_t{1} << UNIT_MAX) - 1 : 0;
+    const int deckAttr = fullDeck ? cards.front()->attr : 0;
+    bool sameAttr = fullDeck;
+    for (const auto* card : cards) {
+        commonUnits &= card->unitMask;
+        sameAttr &= card->attr == deckAttr;
+        if constexpr (CountUnits) {
+            for (auto units = card->unitMask; units; units &= units - 1)
+                ++(*unitCounts)[std::countr_zero(units)];
+        }
+    }
+
+    int total = honorBonus;
+    if (!cards.empty() && !cards.front()->multiUnitPower.empty()
+        && multiUnitEval != MultiUnitBonusEvaluation::ForceOff
+        && (multiUnitEval == MultiUnitBonusEvaluation::ForceOn || DeckCalculator::isMultiUnitDeck(cards))) {
+        for (const auto* card : cards)
+            total += card->getMultiUnitPower(commonUnits, sameAttr).total;
+    }
+    else if (commonUnits == 0) {
+        for (const auto* card : cards)
+            total += std::max(card->powerTotals[0][sameAttr], card->powerTotals[1][sameAttr]);
+    }
+    else {
+        for (const auto* card : cards) {
+            int power = 0;
+            int slot = 0;
+            for (auto units = card->unitMask; units; units &= units - 1, ++slot) {
+                const int state = (commonUnits & (uint16_t{1} << std::countr_zero(units)) ? 2 : 0) + sameAttr;
+                power = std::max(power, card->powerTotals[slot][state]);
+            }
+            total += power;
+        }
+    }
+    return total;
+}
+
 struct PreparedScoreSkill {
     const DeckCardSkillDetail* detail;
     double scoreUp;
@@ -384,44 +430,7 @@ int DeckCalculator::getDeckTotalPowerByCards(
     MultiUnitBonusEvaluation multiUnitEval
 )
 {
-    const bool fullDeck = cardDetails.size() == 5;
-    uint16_t commonUnitMask = fullDeck ? (uint16_t{1} << UNIT_MAX) - 1 : 0;
-    const int deckAttr = fullDeck ? cardDetails[0]->attr : 0;
-    bool allSameAttr = fullDeck;
-    for (const auto* card : cardDetails) {
-        commonUnitMask &= card->unitMask;
-        allSameAttr &= card->attr == deckAttr;
-    }
-
-    int total = honorBonus;
-    if (!cardDetails.empty() && !cardDetails.front()->multiUnitPower.empty()
-        && multiUnitEval != MultiUnitBonusEvaluation::ForceOff
-        && (multiUnitEval == MultiUnitBonusEvaluation::ForceOn || isMultiUnitDeck(cardDetails))) {
-        for (const auto* card : cardDetails)
-            total += card->getMultiUnitPower(commonUnitMask, allSameAttr).total;
-        return total;
-    }
-    if (commonUnitMask == 0) {
-        for (const auto* card : cardDetails) {
-            total += std::max(
-                card->powerTotals[0][allSameAttr],
-                card->powerTotals[1][allSameAttr]
-            );
-        }
-        return total;
-    }
-
-    for (const auto* card : cardDetails) {
-        int cardPower = 0;
-        int unitIndex = 0;
-        for (auto units = card->unitMask; units; units &= units - 1, ++unitIndex) {
-            const auto unit = std::countr_zero(units);
-            const int state = (commonUnitMask & (uint16_t{1} << unit) ? 2 : 0) + allSameAttr;
-            cardPower = std::max(cardPower, card->powerTotals[unitIndex][state]);
-        }
-        total += cardPower;
-    }
-    return total;
+    return calculateDeckTotalPower<false>(cardDetails, honorBonus, multiUnitEval);
 }
 
 
@@ -459,26 +468,10 @@ void DeckCalculator::forEachDeckState(
     // 评分路径只消费 power.total.total 与 unitCounts，跳过分项综合力物化；
     // powerTotals[槽][状态] 与 power.get(unit, 组合数==5?5:1, 属性数==5?5:1).total 逐值等价
     DeckPowerCalculation powerCalculation{};
-    if (slimPower && (cardDetails.empty() || cardDetails.front()->multiUnitPower.empty())) {
-        int attrMap[16] = {};
-        for (const auto* card : cardDetails) {
-            ++attrMap[card->attr];
-            for (auto units = card->unitMask; units; units &= units - 1)
-                ++powerCalculation.unitCounts[std::countr_zero(units)];
-        }
-        int total = honorBonus;
-        for (const auto* card : cardDetails) {
-            const int attrState = attrMap[card->attr] == 5 ? 1 : 0;
-            int best = 0;
-            int slot = 0;
-            for (auto units = card->unitMask; units; units &= units - 1, ++slot) {
-                const auto unit = std::countr_zero(units);
-                const int state = (powerCalculation.unitCounts[unit] == 5 ? 2 : 0) + attrState;
-                best = std::max(best, card->powerTotals[slot][state]);
-            }
-            total += best;
-        }
-        powerCalculation.total.total = total;
+    if (slimPower) {
+        powerCalculation.total.total = calculateDeckTotalPower<true>(
+            cardDetails, honorBonus, multiUnitEval, &powerCalculation.unitCounts
+        );
     }
     else {
         powerCalculation = getDeckPowerByCards(cardDetails, honorBonus, multiUnitEval);

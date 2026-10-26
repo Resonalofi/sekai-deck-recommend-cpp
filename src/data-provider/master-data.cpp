@@ -340,19 +340,31 @@ void addFinalChapter2EventIfNeeded(MasterData& md) {
             md.eventDeckBonuses.push_back(bonus);
         }
 
-        // 动态选取真实WL章节活动的当期卡；主队仅WL3生效，支援含WL1/WL2/WL3
+        std::vector<int> chapterEventIds;
+        for (const auto& chapter : md.events) {
+            if (chapter.id < 1000 && !isFinalChapterEvent(chapter.id)
+                && chapter.eventType == Enums::EventType::world_bloom
+                && md.getWorldBloomEventTurn(chapter.id) == 3)
+                chapterEventIds.push_back(chapter.id);
+        }
+        std::sort(chapterEventIds.begin(), chapterEventIds.end());
+
+        // 历史支援规则沿用WL3主表，按角色和卡牌合并；保留原始映射和数值。
+        std::vector<WorldBloomSupportDeckUnitEventLimitedBonus> supportBonuses;
+        for (const auto& bonus : md.worldBloomSupportDeckUnitEventLimitedBonuses) {
+            if (!std::binary_search(chapterEventIds.begin(), chapterEventIds.end(), bonus.eventId))
+                continue;
+            auto inherited = bonus;
+            inherited.eventId = finalChapter2EventId;
+            supportBonuses.push_back(inherited);
+        }
+
+        // 主队仅WL3当期卡生效；支援补入本轮当期卡，已有主表规则优先。
         std::set<int> limitedCardIds;
         std::vector<EventCard> newEventCards{};
         for (const auto& eventCard : md.eventCards) {
-            if (eventCard.eventId >= 1000 ||
-                isFinalChapterEvent(eventCard.eventId) ||
-                eventCard.bonusRate <= 0) {
-                continue;
-            }
-            const auto eventIt = std::find_if(md.events.begin(), md.events.end(), [&](const Event& current) {
-                return current.id == eventCard.eventId;
-            });
-            if (eventIt == md.events.end() || eventIt->eventType != Enums::EventType::world_bloom)
+            if (eventCard.bonusRate <= 0 || !std::binary_search(
+                chapterEventIds.begin(), chapterEventIds.end(), eventCard.eventId))
                 continue;
             const auto cardIt = std::find_if(md.cards.begin(), md.cards.end(), [&](const Card& card) {
                 return card.id == eventCard.cardId;
@@ -360,23 +372,33 @@ void addFinalChapter2EventIfNeeded(MasterData& md) {
             if (cardIt == md.cards.end() || !limitedCardIds.insert(eventCard.cardId).second)
                 continue;
 
-            if (md.getWorldBloomEventTurn(eventCard.eventId) == 3) {
-                auto newEventCard = eventCard;
-                newEventCard.eventId = finalChapter2EventId;
-                newEventCard.bonusRate = 25.0;
-                newEventCard.leaderBonusRate = 20.0;
-                newEventCards.push_back(newEventCard);
-            }
+            auto newEventCard = eventCard;
+            newEventCard.eventId = finalChapter2EventId;
+            newEventCard.bonusRate = 25.0;
+            newEventCard.leaderBonusRate = 20.0;
+            newEventCards.push_back(newEventCard);
 
-            // 支援里的WL1/WL2/WL3限定卡牌加成，仅对应角色生效且每张卡只添加一次
-            WorldBloomSupportDeckUnitEventLimitedBonus supportBonus;
-            supportBonus.eventId = finalChapter2EventId;
-            supportBonus.gameCharacterId = cardIt->characterId;
-            supportBonus.cardId = eventCard.cardId;
-            supportBonus.bonusRate = 20.0;
-            md.worldBloomSupportDeckUnitEventLimitedBonuses.push_back(supportBonus);
+            supportBonuses.push_back(WorldBloomSupportDeckUnitEventLimitedBonus{
+                .eventId = finalChapter2EventId,
+                .gameCharacterId = cardIt->characterId,
+                .cardId = eventCard.cardId,
+                .bonusRate = 20.0,
+            });
         }
         md.eventCards.insert(md.eventCards.end(), newEventCards.begin(), newEventCards.end());
+        const auto supportKey = [](const WorldBloomSupportDeckUnitEventLimitedBonus& bonus) {
+            return std::pair(bonus.gameCharacterId, bonus.cardId);
+        };
+        // 稳定排序保留先加入的主表规则，连续存储避免逐条分配树节点。
+        std::stable_sort(supportBonuses.begin(), supportBonuses.end(), [&](const auto& a, const auto& b) {
+            return supportKey(a) < supportKey(b);
+        });
+        const auto end = std::unique(supportBonuses.begin(), supportBonuses.end(), [&](const auto& a, const auto& b) {
+            return supportKey(a) == supportKey(b);
+        });
+        md.worldBloomSupportDeckUnitEventLimitedBonuses.insert(
+            md.worldBloomSupportDeckUnitEventLimitedBonuses.end(), supportBonuses.begin(), end
+        );
     }
 }
 
