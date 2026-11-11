@@ -142,7 +142,8 @@ public:
         bool keepAfterTrainingState = false,
         bool bestSkillAsLeader = true,
         bool slimPower = false,
-        MultiUnitBonusEvaluation multiUnitEval = MultiUnitBonusEvaluation::ByDeck
+        MultiUnitBonusEvaluation multiUnitEval = MultiUnitBonusEvaluation::ByDeck,
+        std::optional<int> selectedStatusMask = std::nullopt
     );
 
     void forEachMultiLiveScoreState(

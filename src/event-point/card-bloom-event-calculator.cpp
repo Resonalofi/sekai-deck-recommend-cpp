@@ -28,32 +28,34 @@ std::optional<double> CardBloomEventCalculator::getCardSupportDeckBonus(const Us
             return it.cardRarityType == card.cardRarityType; 
         }, [&]() { return "World Bloom Support Deck Bonus not found for cardRarityType=" + std::to_string(card.cardRarityType); }
     );
-    double total = 0;
+    // The IPA converts each float32 rate to Decimal before adding it. Current
+    // WL tables use hundredths of a percentage point; keep that unit exact.
+    int totalHundredths = 0;
 
     // 角色加成
     int type = (card.characterId == specialCharacterId) ? Enums::WorldBloomSupportDeckCharacterType::specific : Enums::WorldBloomSupportDeckCharacterType::others;
-    total += findOrThrow(bonus.worldBloomSupportDeckCharacterBonuses, [&](const WorldBloomSupportDeckCharacterBonus& it) { 
+    totalHundredths += std::lround(findOrThrow(bonus.worldBloomSupportDeckCharacterBonuses, [&](const WorldBloomSupportDeckCharacterBonus& it) {
             return it.worldBloomSupportDeckCharacterType == type; 
         }, [&]() { return "World Bloom Support Deck Character Bonus not found for type=" + std::to_string(type); }
-    ).bonusRate;
+    ).bonusRate * 100);
     // 专精等级加成
-    total += findOrThrow(bonus.worldBloomSupportDeckMasterRankBonuses, [&](const WorldBloomSupportDeckMasterRankBonus& it) { 
+    totalHundredths += std::lround(findOrThrow(bonus.worldBloomSupportDeckMasterRankBonuses, [&](const WorldBloomSupportDeckMasterRankBonus& it) {
             return it.masterRank == userCard.masterRank; 
         }, [&]() { return "World Bloom Support Deck Master Rank Bonus not found for masterRank=" + std::to_string(userCard.masterRank); }
-    ).bonusRate;
+    ).bonusRate * 100);
     // 技能等级加成
-    total += findOrThrow(bonus.worldBloomSupportDeckSkillLevelBonuses, [&](const WorldBloomSupportDeckSkillLevelBonus& it) { 
+    totalHundredths += std::lround(findOrThrow(bonus.worldBloomSupportDeckSkillLevelBonuses, [&](const WorldBloomSupportDeckSkillLevelBonus& it) {
             return it.skillLevel == userCard.skillLevel; 
         }, [&]() { return "World Bloom Support Deck Skill Level Bonus not found for skillLevel=" + std::to_string(userCard.skillLevel); }
-    ).bonusRate;
+    ).bonusRate * 100);
 
     // 4.5周年，新增了上一期WL卡牌额外加成
     auto& worldBloomSupportDeckUnitEventLimitedBonuses = dataProvider.masterData->worldBloomSupportDeckUnitEventLimitedBonuses;
     for (const auto& bonus : worldBloomSupportDeckUnitEventLimitedBonuses) {
         // 找到合适的卡牌加成
         if (bonus.eventId == eventId && bonus.gameCharacterId == specialCharacterId && bonus.cardId == card.id) {
-            total += bonus.bonusRate;
+            totalHundredths += std::lround(bonus.bonusRate * 100);
         }
     }
-    return total;
+    return totalHundredths / 100.0;
 }

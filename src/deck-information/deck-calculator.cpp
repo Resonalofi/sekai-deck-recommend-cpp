@@ -57,13 +57,14 @@ struct PreparedScoreSkill {
     double scoreUp;
 };
 
-template<typename Consumer>
+template<bool EnumerateImages, typename Consumer>
 void forEachSkillScoreState(
     const std::vector<const CardDetail*>& cardDetails,
     const std::array<int, 16>& unitCounts,
     SkillReferenceChooseStrategy skillReferenceChooseStrategy,
     bool keepAfterTrainingState,
     bool bestSkillAsLeader,
+    std::optional<int> selectedStatusMask,
     Consumer&& consume
 ) {
     const int cardCount = static_cast<int>(cardDetails.size());
@@ -85,26 +86,30 @@ void forEachSkillScoreState(
         for (auto units = card.unitMask; units; units &= units - 1) {
             const int unit = std::countr_zero(units);
             const auto& current = card.skill.get(unit, unitCounts[unit], 1);
-            if (current.scoreUp > after.scoreUp)
+            if (!after.detail->skillId || current.scoreUp > after.scoreUp)
                 after = {&current, current.scoreUp};
         }
 
         bool needEnumerate = false;
         const auto& referenceSkill = card.skill.get(Enums::Unit::ref, 1, 1);
         const double referenceScoreUp = referenceSkill.scoreUp + referenceSkill.scoreUpReferenceMax;
-        if (referenceSkill.skillId != after.detail->skillId && referenceScoreUp > before.scoreUp) {
+        if (referenceSkill.hasScoreUpReference && referenceScoreUp > before.scoreUp) {
             before = {&referenceSkill, referenceScoreUp};
             needEnumerate = true;
         }
 
         const auto& differentUnitSkill = card.skill.get(Enums::Unit::diff, unitCount - 1, 1);
-        if (differentUnitSkill.skillId != after.detail->skillId &&
+        if ((differentUnitSkill.skillId != after.detail->skillId || differentUnitSkill.scoreUp > after.scoreUp) &&
             differentUnitSkill.scoreUp > before.scoreUp) {
             before = {&differentUnitSkill, differentUnitSkill.scoreUp};
             needEnumerate = false;
         }
 
-        if (before.detail->skillId)
+        if (before.detail->skillId == after.detail->skillId && before.detail->skillId) {
+            after = before;
+            needEnumerate = false;
+        }
+        else if (before.detail->skillId)
             doubleSkillMask |= 1 << i;
 
         if (keepAfterTrainingState) {
@@ -113,7 +118,8 @@ void forEachSkillScoreState(
                 after = before;
             }
         }
-        else if (needEnumerate) {
+        else if (selectedStatusMask.has_value() || needEnumerate || (EnumerateImages && bestSkillAsLeader &&
+            (doubleSkillMask & (1 << i)))) {
             needEnumerateStatusMask |= 1 << i;
         }
         else if (before.scoreUp > after.scoreUp) {
@@ -126,10 +132,11 @@ void forEachSkillScoreState(
     std::array<double, 5> referenceInputs{};
     std::array<int, 5> order{};
     std::array<double, 4> memberSkillMaxs{};
-    std::array<std::pair<int, int>, 32> scoreUps;
+    // Only entries below scoreUpCount have been written and can be compared.
+    std::array<std::array<double, EnumerateImages ? 5 : 2>, 32> scoreUps;
     int scoreUpCount = 0;
-    for (int mask = needEnumerateStatusMask; mask >= 0;
-         mask = mask ? (mask - 1) & needEnumerateStatusMask : -1) {
+    for (int mask = selectedStatusMask.value_or(needEnumerateStatusMask); mask >= 0;
+         mask = selectedStatusMask.has_value() || mask == 0 ? -1 : (mask - 1) & needEnumerateStatusMask) {
         for (int i = 0; i < cardCount; ++i) {
             const auto& selected = preparedSkills[i][(mask & (1 << i)) ? 0 : 1];
             selectedSkills[i] = selected.detail;
@@ -147,11 +154,9 @@ void forEachSkillScoreState(
             for (int j = 0; j < cardCount; ++j) {
                 if (i == j)
                     continue;
-                double value = referenceInputs[j];
-                value = std::min(
-                    std::floor(value * skill.scoreUpReferenceRate / 100.0),
-                    skill.scoreUpReferenceMax
-                );
+                const float referenceRate = float(skill.scoreUpReferenceRate) / 100.0f;
+                const float referenced = referenceRate * float(referenceInputs[j]);
+                const float value = std::min(referenced, float(skill.scoreUpReferenceMax));
                 memberSkillMaxs[memberSkillCount++] = value;
             }
 
@@ -195,29 +200,41 @@ void forEachSkillScoreState(
             );
         }
 
-        double leaderScoreUp = 0.0;
-        double otherScoreUpSum = 0.0;
-        for (int index : order) {
-            if (index == 0)
-                leaderScoreUp = scoreValues[index];
-            else
-                otherScoreUpSum += scoreValues[index];
+        std::array<double, EnumerateImages ? 5 : 2> orderedScoreValues{};
+        if constexpr (EnumerateImages) {
+            for (int i = 0; i < cardCount; ++i)
+                orderedScoreValues[i] = scoreValues[order[i]];
+        } else {
+            orderedScoreValues[0] = scoreValues[order[0]];
+            for (int i = 1; i < cardCount; ++i)
+                orderedScoreValues[1] += scoreValues[order[i]];
         }
         bool skip = false;
         for (int i = 0; i < scoreUpCount; ++i) {
-            const auto& scoreUp = scoreUps[i];
-            if (scoreUp.first >= leaderScoreUp && scoreUp.second >= otherScoreUpSum) {
+            // Solo scoring depends on each position; multiplayer scoring uses
+            // the leader and 20% of the other members' combined score-up.
+            bool dominates = true;
+            for (int j = 0; j < (EnumerateImages ? cardCount : 2); ++j)
+                dominates &= scoreUps[i][j] >= orderedScoreValues[j];
+            if (dominates) {
                 skip = true;
                 break;
             }
         }
         if (skip)
             continue;
-        scoreUps[scoreUpCount++] = {leaderScoreUp, otherScoreUpSum};
+        scoreUps[scoreUpCount++] = orderedScoreValues;
 
         double multiLiveScoreUp = scoreValues[order[0]];
         for (int i = 1; i < cardCount; ++i)
             multiLiveScoreUp += scoreValues[order[i]] * 0.2;
+
+        // Describe the selected images independently of search shortcuts, so
+        // materialization selects the same skills as the fast path.
+        int statusMask = 0;
+        for (int i = 0; i < cardCount; ++i)
+            if ((doubleSkillMask & (1 << i)) && !selectedSkills[i]->isAfterTraining)
+                statusMask |= 1 << i;
 
         consume(
             selectedSkills,
@@ -225,7 +242,7 @@ void forEachSkillScoreState(
             referenceInputs,
             order,
             doubleSkillMask,
-            mask,
+            statusMask,
             multiLiveScoreUp
         );
     }
@@ -321,7 +338,7 @@ SupportDeckBonus DeckCalculator::getSupportDeckBonus(
         }
     }
 
-    double bonus = 0;
+    int bonusHundredths = 0;
     int count = 0;
     
     std::vector<SupportDeckCard> cards{};
@@ -330,13 +347,13 @@ SupportDeckBonus DeckCalculator::getSupportDeckBonus(
         if (i < 32 && (excludedRanks & (std::uint32_t{1} << i)))
             continue;
         const auto& card = supportCards.cards[i];
-        bonus += card.bonus;
+        bonusHundredths += std::lround(card.bonus * 100);
         cards.push_back(card);
         count++;
-        if (count >= supportDeckCount) return { bonus, cards };
+        if (count >= supportDeckCount) return { bonusHundredths / 100.0, cards };
     }
     // 就算组不出完整的支援卡组也得返回
-    return { bonus, cards };
+    return { bonusHundredths / 100.0, cards };
 }
 
 int DeckCalculator::getHonorBonusPower()
@@ -445,7 +462,8 @@ void DeckCalculator::forEachDeckState(
     bool keepAfterTrainingState,
     bool bestSkillAsLeader,
     bool slimPower,
-    MultiUnitBonusEvaluation multiUnitEval
+    MultiUnitBonusEvaluation multiUnitEval,
+    std::optional<int> selectedStatusMask
 )
 {
     // 活动加成
@@ -482,12 +500,13 @@ void DeckCalculator::forEachDeckState(
     }
 
     const int cardCount = static_cast<int>(cardDetails.size());
-    forEachSkillScoreState(
+    forEachSkillScoreState<true>(
         cardDetails,
         powerCalculation.unitCounts,
         skillReferenceChooseStrategy,
         keepAfterTrainingState,
         bestSkillAsLeader,
+        selectedStatusMask,
         [&](const auto& selectedSkills,
             const auto& scoreValues,
             const auto& referenceInputs,
@@ -579,12 +598,13 @@ void DeckCalculator::forEachMultiLiveScoreState(
         power = std::min(power, 336000);
     }
 
-    forEachSkillScoreState(
+    forEachSkillScoreState<false>(
         cardDetails,
         unitCounts,
         skillReferenceChooseStrategy,
         keepAfterTrainingState,
         bestSkillAsLeader,
+        std::nullopt,
         [&](const auto&,
             const auto& scoreValues,
             const auto&,
@@ -627,9 +647,6 @@ std::vector<DeckDetail> DeckCalculator::getDeckDetailByCards(
         cardDetails,
         supportCards,
         [&](const DeckStateView& state) {
-            if (selectedStatusMask.has_value() && state.statusMask != selectedStatusMask.value())
-                return;
-
             std::vector<DeckCardDetail> cards{};
             cards.reserve(state.cardCount);
             for (int pos = 0; pos < state.cardCount; ++pos) {
@@ -698,7 +715,8 @@ std::vector<DeckDetail> DeckCalculator::getDeckDetailByCards(
         keepAfterTrainingState,
         bestSkillAsLeader,
         /*slimPower=*/false,
-        multiUnitEval
+        multiUnitEval,
+        selectedStatusMask
     );
 
     return ret;

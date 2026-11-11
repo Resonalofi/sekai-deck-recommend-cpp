@@ -238,10 +238,11 @@ void applyMysekaiSimulation(
     const MysekaiSimulationConfig& config
 ) {
     if (config.fixtures.has_value()) {
+        const float scale = masterData.fixtureBonusRateScale;
         std::map<int, double> rates;
         if (config.fixtures->useCurrent)
             for (const auto& bonus : userData.userMysekaiFixtureGameCharacterPerformanceBonuses)
-                rates[bonus.gameCharacterId] = bonus.totalBonusRate / 10.0;
+                rates[bonus.gameCharacterId] = bonus.totalBonusRate / scale;
         for (const auto& [characterId, rate] : config.fixtures->bonusRatePercent) {
             const int targetCharacterId = characterId;
             if (std::none_of(masterData.gameCharacters.begin(), masterData.gameCharacters.end(),
@@ -256,7 +257,7 @@ void applyMysekaiSimulation(
         userData.userMysekaiFixtureGameCharacterPerformanceBonuses.clear();
         for (const auto& [characterId, rate] : rates)
             if (rate > 0.0)
-                userData.userMysekaiFixtureGameCharacterPerformanceBonuses.push_back({characterId, rate * 10.0});
+                userData.userMysekaiFixtureGameCharacterPerformanceBonuses.push_back({characterId, rate * scale});
     }
 
     if (config.gates.has_value()) {

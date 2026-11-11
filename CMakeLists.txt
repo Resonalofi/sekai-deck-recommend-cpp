@@ -25,6 +25,7 @@ if (EMSCRIPTEN)
         -Wall
         -Wextra
         -Wuninitialized
+        -ffp-contract=off
         -fexceptions
         -flto
     )
@@ -76,7 +77,7 @@ else()
         if (MSVC)
             target_compile_options(sekai_deck_recommend_core PRIVATE /W4 /MP /utf-8)
         else()
-            target_compile_options(sekai_deck_recommend_core PRIVATE -Wall -Wextra -Wuninitialized)
+            target_compile_options(sekai_deck_recommend_core PRIVATE -Wall -Wextra -Wuninitialized -ffp-contract=off)
         endif()
     endif()
 
@@ -98,7 +99,7 @@ else()
             )
         else()
             target_compile_options(sekai_deck_recommend PRIVATE
-                -Wall -Wextra -Wuninitialized
+                -Wall -Wextra -Wuninitialized -ffp-contract=off
             )
         endif()
 

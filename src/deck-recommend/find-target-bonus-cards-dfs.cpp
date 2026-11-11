@@ -162,7 +162,7 @@ void BaseDeckRecommend::findTargetBonusCardsDFS(
 )
 {
     std::vector<int> bonusList = config.bonusList;
-    for (auto& x : bonusList) x *= 2;
+    for (auto& x : bonusList) x *= eventBonusScale;
     std::sort(bonusList.begin(), bonusList.end());
     if (bonusList.empty()) 
         throw std::runtime_error("Bonus list is empty");
@@ -172,7 +172,7 @@ void BaseDeckRecommend::findTargetBonusCardsDFS(
         throw std::runtime_error("this func is not used for world bloom event");
     }
 
-    // 按照加成*2和角色类型归类
+    // 按0.1个百分点和角色类型归类，保留低星卡专精的零点几加成。
     std::map<int, std::vector<const CardDetail *>> bonusCharaCards;
     std::map<int, bool> hasBonusCharaCards;
     std::set<int> fixedCardIds{};
@@ -184,9 +184,7 @@ void BaseDeckRecommend::findTargetBonusCardsDFS(
     for (const auto &card : cardDetails) {
         const double eventBonus = card.maxEventBonus.value_or(0.0);
         if (eventBonus > 0 || fixedCardIds.count(card.cardId)) {
-            if (std::abs(std::round(eventBonus * 2) - eventBonus * 2) > 1e-6)
-                continue;
-            int bonus = std::round(eventBonus * 2);
+            int bonus = std::lround(eventBonus * eventBonusScale);
             int chara = card.characterId;
             int key = getCharaBonusKey(chara, bonus);
             bonusCharaCards[key].push_back(&card);
@@ -210,7 +208,7 @@ void BaseDeckRecommend::findTargetBonusCardsDFS(
         requiredCharacters.insert(card.characterId);
         requiredKeys.insert(getCharaBonusKey(
             card.characterId,
-            std::round(card.maxEventBonus.value_or(0.0) * 2)
+            std::lround(card.maxEventBonus.value_or(0.0) * eventBonusScale)
         ));
     }
 
@@ -257,13 +255,7 @@ void BaseDeckRecommend::findTargetBonusCardsDFS(
                 );
                 if (!deckRes.has_value())
                     continue;
-                // 需要验证加成正确
-                if(std::abs(deckRes->eventBonus.value_or(0) * 2 - bonus) < 1e-6)
-                    dfsInfo.update(deckRes.value(), 1e9);
-                else
-                    std::cerr << "Warning: Event bonus mismatch, expected "
-                            << bonus / 2.0 << ", got " 
-                            << deckRes->eventBonus.value_or(0) << std::endl;
+                dfsInfo.update(deckRes.value(), 1e9);
             }
         }
 

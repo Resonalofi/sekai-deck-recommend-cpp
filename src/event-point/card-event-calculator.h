@@ -3,6 +3,9 @@
 
 #include "data-provider/data-provider.h"
 
+// Main-deck event bonuses use tenths of a percentage point.
+inline constexpr int eventBonusScale = 10;
+
 struct CardEventBonusInfo {
     double maxBonus = 0;
     double minBonus = 0;

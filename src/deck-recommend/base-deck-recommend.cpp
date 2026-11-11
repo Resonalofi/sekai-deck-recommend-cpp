@@ -149,7 +149,8 @@ void BaseDeckRecommend::runRecommendAlgorithm(
             return !card.multiUnitPower.empty();
         });
         const bool wlPrune = !hasMultiUnitPower &&
-            (eventConfig.eventType != Enums::EventType::world_bloom || eventConfig.eventUnit != 0);
+            (eventConfig.eventType != Enums::EventType::world_bloom || eventConfig.eventUnit != 0) &&
+            canMakeDeck(liveType, eventConfig.eventType, pool, config.member);
         // 分区并行会改变顶层遍历顺序，只在「卡组得分与卡内次序无关」时才成立。
         // 三个条件缺一不可：
         //   1. Score 目标——Power/Skill/Mysekai 在 559~576 行用 preCard 做
@@ -346,8 +347,7 @@ BestPermutationResult BaseDeckRecommend::getBestPermutation(
         }
     };
 
-    if (config.target == RecommendTarget::Score &&
-        deckCards.size() == 5 && Enums::LiveType::isMulti(liveType)) {
+    if (deckCards.size() == 5 && Enums::LiveType::isMulti(liveType)) {
         deckCalculator.forEachMultiLiveScoreState(
             deckCards,
             supportCards,
@@ -654,7 +654,7 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
     auto areaItemLevels = areaItemService.getAreaItemLevels();
 
     std::optional<double> scoreUpLimit = std::nullopt;
-    // 终章技能加分上限为140
+    // 两轮终章都限制为+140%；旧版主数据的240包含基础100%，不能直接当加分上限。
     if (isFinalChapterEvent(eventConfig.eventId) && !Enums::LiveType::isChallenge(liveType))
         scoreUpLimit = 140.0;
 
@@ -802,11 +802,11 @@ RecommendResult BaseDeckRecommend::recommendHighScoreDeck(
         // 支援加成取每组排序后前 N 张之和的最大值；实际值还要排除主队伍卡牌，只会更小
         int supportDeckCount = deckCalculator.getWorldBloomSupportDeckCount(eventConfig.eventId);
         for (const auto& [characterId, sortedSupportCards] : supportCards) {
-            double bonus = 0;
+            int bonusHundredths = 0;
             int count = std::min(supportDeckCount, int(sortedSupportCards.cards.size()));
             for (int i = 0; i < count; ++i)
-                bonus += sortedSupportCards.cards[i].bonus;
-            scoreBound.supportDeckBonus = std::max(scoreBound.supportDeckBonus, bonus);
+                bonusHundredths += std::lround(sortedSupportCards.cards[i].bonus * 100);
+            scoreBound.supportDeckBonus = std::max(scoreBound.supportDeckBonus, bonusHundredths / 100.0);
         }
     }
 

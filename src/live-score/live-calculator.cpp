@@ -3,6 +3,16 @@
 #include <algorithm>
 #include <array>
 
+namespace {
+
+int getPraiseBonus(int liveType, int partyPower) {
+    // LiveConfig.PraiseScoreFactor / LotteryPraiseCount; each award is floored.
+    return Enums::LiveType::isMulti(liveType)
+        ? 5 * int(std::floor(0.015f * float(partyPower))) : 0;
+}
+
+}
+
 
 MusicMeta LiveCalculator::getMusicMeta(int musicId, int musicDif)
 {
@@ -166,12 +176,12 @@ LiveDetail LiveCalculator::getLiveDetailByDeck(
         life += it.lifeRecovery;
     }
     // 活跃加分
-    double powerSum = 5 * deckDetail.power.total;   // 默认复制5份自己
+    int powerSum = 5 * deckDetail.power.total;   // 默认复制5份自己
     if (multiPowerSum)
         powerSum = multiPowerSum;   // 指定总和
     if (multiTeammatePower.has_value())
         powerSum = deckDetail.power.total + multiTeammatePower.value() * 4; // 指定队友综合力 自己+4*队友
-    double activeBonus = liveType == Enums::LiveType::isMulti(liveType) ? 5 * 0.015 * powerSum : 0;
+    const int activeBonus = getPraiseBonus(liveType, powerSum);
     return LiveDetail{
         int(rate * deckDetail.power.total * 4 + activeBonus),
         musicMeta.music_time,
@@ -284,10 +294,10 @@ int LiveCalculator::getLiveScoreByDeck(
         for (size_t i = 0; i < 6; ++i)
             rate += skills[i] * skillScores[i] / 100.;
 
-        double powerSum = 5 * deckDetail.power.total;
+        int powerSum = 5 * deckDetail.power.total;
         if (multiTeammatePower.has_value())
             powerSum = deckDetail.power.total + multiTeammatePower.value() * 4;
-        double activeBonus = liveType == Enums::LiveType::isMulti(liveType) ? 5 * 0.015 * powerSum : 0;
+        const int activeBonus = getPraiseBonus(liveType, powerSum);
         return int(rate * deckDetail.power.total * 4 + activeBonus);
     }
 
@@ -367,10 +377,10 @@ int LiveCalculator::getLiveScoreByDeck(
         for (size_t i = 0; i < 6; ++i)
             rate += skills[i] * skillScores[i] / 100.;
 
-        double powerSum = 5 * deckDetail.power.total;
+        int powerSum = 5 * deckDetail.power.total;
         if (multiTeammatePower.has_value())
             powerSum = deckDetail.power.total + multiTeammatePower.value() * 4;
-        double activeBonus = liveType == Enums::LiveType::isMulti(liveType) ? 5 * 0.015 * powerSum : 0;
+        const int activeBonus = getPraiseBonus(liveType, powerSum);
         return int(rate * deckDetail.power.total * 4 + activeBonus);
     }
 
@@ -448,10 +458,10 @@ int LiveCalculator::getLiveScoreByDeck(
     for (int i = 0; i < skillCount; ++i)
         rate += skills[i] * skillScores[i] / 100.;
 
-    double powerSum = 5 * deckDetail.power.total;
+    int powerSum = 5 * deckDetail.power.total;
     if (multiTeammatePower.has_value())
         powerSum = deckDetail.power.total + multiTeammatePower.value() * 4;
-    double activeBonus = liveType == Enums::LiveType::isMulti(liveType) ? 5 * 0.015 * powerSum : 0;
+    const int activeBonus = getPraiseBonus(liveType, powerSum);
     return int(rate * deckDetail.power.total * 4 + activeBonus);
 }
 

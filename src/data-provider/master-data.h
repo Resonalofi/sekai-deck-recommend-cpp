@@ -36,6 +36,7 @@ struct MasterDataCore {
     std::vector<Event> events;
     std::vector<EventItem> eventItems;
     std::vector<EventRarityBonusRate> eventRarityBonusRates;
+    float virtualSingerEventBonus = 0;
     std::vector<GameCharacter> gameCharacters;
     std::vector<GameCharacterUnit> gameCharacterUnits;
     std::vector<MasterLesson> masterLessons;
@@ -44,6 +45,9 @@ struct MasterDataCore {
     std::vector<MusicVocal> musicVocals;
     std::vector<MysekaiFixtureGameCharacterGroup> mysekaiFixtureGameCharacterGroups;
     std::vector<MysekaiFixtureGameCharacterGroupPerformanceBonus> mysekaiFixtureGameCharacterGroupPerformanceBonuses;
+    float fixtureBonusRateScale = 0;
+    std::optional<int> fixtureBonusLimit;
+    std::map<int, int> eventFixtureBonusLimits;
     std::vector<MysekaiGate> mysekaiGates;
     std::vector<MysekaiGateLevel> mysekaiGateLevels;
     std::vector<ShopItem> shopItems;
@@ -68,6 +72,7 @@ private:
     void addFakeEvent(int eventType);
     void finishLoad();
     void rebuildHonorIndex();
+    void loadBonusData(const std::map<std::string, json>& documents);
 
 public:
     MasterData();
@@ -89,6 +94,7 @@ public:
     std::vector<Event>& events;
     std::vector<EventItem>& eventItems;
     std::vector<EventRarityBonusRate>& eventRarityBonusRates;
+    float& virtualSingerEventBonus;
     std::vector<GameCharacter>& gameCharacters;
     std::vector<GameCharacterUnit>& gameCharacterUnits;
     std::vector<Honor> honors;
@@ -98,6 +104,9 @@ public:
     std::vector<MusicVocal>& musicVocals;
     std::vector<MysekaiFixtureGameCharacterGroup>& mysekaiFixtureGameCharacterGroups;
     std::vector<MysekaiFixtureGameCharacterGroupPerformanceBonus>& mysekaiFixtureGameCharacterGroupPerformanceBonuses;
+    float& fixtureBonusRateScale;
+    std::optional<int>& fixtureBonusLimit;
+    std::map<int, int>& eventFixtureBonusLimits;
     std::vector<MysekaiGate>& mysekaiGates;
     std::vector<MysekaiGateLevel>& mysekaiGateLevels;
     std::vector<ShopItem>& shopItems;

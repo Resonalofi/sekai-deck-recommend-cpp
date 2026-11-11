@@ -194,7 +194,7 @@ void BaseDeckRecommend::findWorldBloomTargetBonusCardsDFS(
     }
 
     std::vector<int> bonusList = config.bonusList;
-    for (auto& x : bonusList) x *= 2;
+    for (auto& x : bonusList) x *= eventBonusScale;
     std::sort(bonusList.begin(), bonusList.end());
     if (bonusList.empty()) 
         throw std::runtime_error("Bonus list is empty");
@@ -204,7 +204,7 @@ void BaseDeckRecommend::findWorldBloomTargetBonusCardsDFS(
         throw std::runtime_error("this func is only used for world bloom event");
     }
 
-    // 按照加成*2和角色类型和卡牌颜色归类
+    // 按0.1个百分点、角色和属性归类，保留低星卡专精的零点几加成。
     std::map<int, std::vector<const CardDetail *>> bonusCharaCards;
     std::set<int> fixedCardIds{};
     std::map<int, const CardDetail*> fixedCardByCharacter{};
@@ -215,9 +215,7 @@ void BaseDeckRecommend::findWorldBloomTargetBonusCardsDFS(
     for (const auto &card : cardDetails) {
         const double eventBonus = card.maxEventBonus.value_or(0.0);
         if (eventBonus > 0 || fixedCardIds.count(card.cardId)) {
-            if (std::abs(std::round(eventBonus * 2) - eventBonus * 2) > 1e-6)
-                continue;
-            int bonus = std::round(eventBonus * 2);
+            int bonus = std::lround(eventBonus * eventBonusScale);
             int chara = card.characterId;
             int attr = card.attr;
             int key = getCharaAttrBonusKey(chara, attr, bonus);
@@ -239,7 +237,7 @@ void BaseDeckRecommend::findWorldBloomTargetBonusCardsDFS(
     int maxAttrBonus = 0;
     auto& worldBloomDifferentAttributeBonuses = this->dataProvider.masterData->worldBloomDifferentAttributeBonuses;
     for (const auto &bonus : worldBloomDifferentAttributeBonuses) {
-        int rounded = std::round(bonus.bonusRate * 2);
+        int rounded = std::lround(bonus.bonusRate * eventBonusScale);
         if (bonus.attributeCount >= 0 && bonus.attributeCount < 6)
             diffAttrBonus[bonus.attributeCount] = rounded;
         maxAttrBonus = std::max(maxAttrBonus, rounded);
@@ -256,7 +254,7 @@ void BaseDeckRecommend::findWorldBloomTargetBonusCardsDFS(
         requiredKeys.insert(getCharaAttrBonusKey(
             card.characterId,
             card.attr,
-            std::round(card.maxEventBonus.value_or(0.0) * 2)
+            std::lround(card.maxEventBonus.value_or(0.0) * eventBonusScale)
         ));
     }
 
@@ -305,13 +303,7 @@ void BaseDeckRecommend::findWorldBloomTargetBonusCardsDFS(
                 );
                 if (!deckRes.has_value())
                     continue;
-                // 需要验证加成正确
-                if(std::abs(deckRes->eventBonus.value_or(0) * 2 - bonus) < 1e-6)
-                    dfsInfo.update(deckRes.value(), 1e9);
-                else
-                    std::cerr << "Warning: World Bloom bonus mismatch, expected "
-                            << bonus / 2.0 << ", got " 
-                            << deckRes->eventBonus.value_or(0) << std::endl;
+                dfsInfo.update(deckRes.value(), 1e9);
             }
         }
 

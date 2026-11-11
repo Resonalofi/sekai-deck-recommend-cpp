@@ -25,6 +25,9 @@ std::vector<MysekaiGateBonus> MySekaiService::getMysekaiGateBonuses()
         auto& gate = findOrThrow(mysekaiGates, [&](const MysekaiGate& g) {
             return g.id == it.mysekaiGateId;
         }, [&]() { return "Mysekai gate not found for mysekaiGateId=" + std::to_string(it.mysekaiGateId); });
+        // The shuffle gate has no unit performance bonus or level table.
+        if (gate.unit == Enums::Unit::none)
+            continue;
         auto& gateLevel = findOrThrow(mysekaiGateLevels, [&](const MysekaiGateLevel& l) {
             return l.mysekaiGateId == it.mysekaiGateId && l.level == it.mysekaiGateLevel;
         }, [&]() { return "Mysekai gate level not found for mysekaiGateId=" + std::to_string(it.mysekaiGateId) + " level=" + std::to_string(it.mysekaiGateLevel); });

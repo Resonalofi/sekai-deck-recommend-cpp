@@ -55,7 +55,7 @@ bool checkAttrForBloom(
 bool canMakeDeck(
     int liveType,
     int eventType,
-    std::vector<CardDetail>& cardDetails,
+    const std::vector<CardDetail>& cardDetails,
     int member = 5
 );
 

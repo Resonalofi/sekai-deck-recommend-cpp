@@ -76,7 +76,7 @@ bool checkAttrForBloom(std::unordered_map<int, std::unordered_set<int>> &attrMap
     return ans == 5;
 }
 
-bool canMakeDeck(int liveType, int eventType, std::vector<CardDetail> &cardDetails, int member)
+bool canMakeDeck(int liveType, int eventType, const std::vector<CardDetail> &cardDetails, int member)
 {
     // 统计组合或者属性的不同角色出现次数
     std::unordered_map<int, std::unordered_set<int>> attrMap{};

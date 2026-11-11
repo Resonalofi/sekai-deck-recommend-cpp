@@ -160,6 +160,7 @@ MasterData::MasterData(std::shared_ptr<MasterDataCore> core)
       events(storage->events),
       eventItems(storage->eventItems),
       eventRarityBonusRates(storage->eventRarityBonusRates),
+      virtualSingerEventBonus(storage->virtualSingerEventBonus),
       gameCharacters(storage->gameCharacters),
       gameCharacterUnits(storage->gameCharacterUnits),
       masterLessons(storage->masterLessons),
@@ -168,6 +169,9 @@ MasterData::MasterData(std::shared_ptr<MasterDataCore> core)
       musicVocals(storage->musicVocals),
       mysekaiFixtureGameCharacterGroups(storage->mysekaiFixtureGameCharacterGroups),
       mysekaiFixtureGameCharacterGroupPerformanceBonuses(storage->mysekaiFixtureGameCharacterGroupPerformanceBonuses),
+      fixtureBonusRateScale(storage->fixtureBonusRateScale),
+      fixtureBonusLimit(storage->fixtureBonusLimit),
+      eventFixtureBonusLimits(storage->eventFixtureBonusLimits),
       mysekaiGates(storage->mysekaiGates),
       mysekaiGateLevels(storage->mysekaiGateLevels),
       shopItems(storage->shopItems),
@@ -208,6 +212,7 @@ Honor* MasterData::findHonorById(int honorId) {
 
 
 const std::vector<std::string> requiredMasterDataKeys = {
+    "configs",
     "areaItemLevels",
     "areaItems",
     "areas",
@@ -234,6 +239,8 @@ const std::vector<std::string> requiredMasterDataKeys = {
     "worldBlooms"
 };
 const std::vector<std::string> notRequiredMasterDataKeys = {
+    "mysekaiFixtureGameCharacterPerformanceBonusLimit",
+    "eventMysekaiFixtureGameCharacterPerformanceBonusLimits",
     "worldBloomSupportDeckUnitEventLimitedBonuses",
     "cardMysekaiCanvasBonuses",
     "mysekaiFixtureGameCharacterGroups",
@@ -270,6 +277,8 @@ void addFinalChapterEventIfNeeded(MasterData& md) {
         }
     }
     if (!hasFinalChapter) {
+        // 提前模拟终章时同步补齐活动玩偶上限；已下发的主数据优先。
+        md.eventFixtureBonusLimits.try_emplace(finalChapterEventId, 20);
         // 活动本身
         Event event;
         event.id = finalChapterEventId;
@@ -324,6 +333,7 @@ void addFinalChapter2EventIfNeeded(MasterData& md) {
         }
     }
     if (!hasFinalChapter2) {
+        md.eventFixtureBonusLimits.try_emplace(finalChapter2EventId, 60);
         // 活动本身
         Event event;
         event.id = finalChapter2EventId;
@@ -449,6 +459,7 @@ void MasterData::loadHonorsFromStrings(MasterDataStrings& data) {
 }
 
 void MasterData::loadFromJsons(std::map<std::string, json>& jsons) {
+    loadBonusData(jsons);
     this->areaItemLevels = loadMasterData<AreaItemLevel>(jsons, "areaItemLevels");
     this->areaItems = loadMasterData<AreaItem>(jsons, "areaItems");
     this->areas = loadMasterData<Area>(jsons, "areas");
@@ -513,6 +524,15 @@ void MasterData::loadFromFiles(const std::string& baseDir) {
 
 void MasterData::loadFromStrings(MasterDataStrings& data) {
     this->baseDir.clear();
+    std::map<std::string, json> bonusDocuments;
+    for (const auto* key : {"configs", "mysekaiFixtureGameCharacterPerformanceBonusLimit", "eventMysekaiFixtureGameCharacterPerformanceBonusLimits"}) {
+        const auto it = data.find(key);
+        if (it != data.end()) {
+            bonusDocuments.emplace(key, json::parse(it->second.begin(), it->second.end()));
+            data.erase(it);
+        }
+    }
+    loadBonusData(bonusDocuments);
     this->areaItemLevels = loadMasterDataFromString<AreaItemLevel>(data, "areaItemLevels");
     this->areaItems = loadMasterDataFromString<AreaItem>(data, "areaItems");
     this->areas = loadMasterDataFromString<Area>(data, "areas");
@@ -557,6 +577,35 @@ void MasterData::loadFromStrings(MasterDataStrings& data) {
     finishLoad();
 }
 
+
+void MasterData::loadBonusData(const std::map<std::string, json>& documents) {
+    fixtureBonusRateScale = 0;
+    virtualSingerEventBonus = 0;
+    fixtureBonusLimit.reset();
+    eventFixtureBonusLimits.clear();
+    for (const auto& entry : documents.at("configs")) {
+        const auto key = entry.at("configKey").get<std::string>();
+        if (key == "mysekai_fixture_game_character_bonus_rate_scale" || key == "event_piapro_point_bonus") {
+            const float value = std::stof(entry.at("value").get<std::string>());
+            if (key == "event_piapro_point_bonus")
+                virtualSingerEventBonus = value;
+            else
+                fixtureBonusRateScale = value;
+        }
+    }
+    if (const auto limit = documents.find("mysekaiFixtureGameCharacterPerformanceBonusLimit");
+        limit != documents.end() && !limit->second.is_null()) {
+        fixtureBonusLimit = limit->second.at("bonusRateLimit").get<int>();
+    }
+    if (const auto limits = documents.find("eventMysekaiFixtureGameCharacterPerformanceBonusLimits");
+        limits != documents.end() && !limits->second.is_null()) {
+        for (const auto& row : limits->second) {
+            const int event = row.at("eventId").get<int>();
+            const int limit = row.at("bonusRateLimit").get<int>();
+            eventFixtureBonusLimits[event] = limit;
+        }
+    }
+}
 
 // 添加用于无活动组卡和指定团+颜色组卡的假活动
 void MasterData::addFakeEvent(int eventType) {

@@ -722,7 +722,7 @@ struct PyRecommendCard {
     int master_rank = 0;
     int level = 0;
     int skill_level = 0;
-    int skill_score_up = 0;
+    double skill_score_up = 0.0;
     int skill_life_recovery = 0;
     bool episode1_read = false;
     bool episode2_read = false;
@@ -775,7 +775,7 @@ struct PyRecommendCard {
         card.master_rank = dict["master_rank"].cast<int>();
         card.level = dict["level"].cast<int>();
         card.skill_level = dict["skill_level"].cast<int>();
-        card.skill_score_up = dict["skill_score_up"].cast<int>();
+        card.skill_score_up = dict["skill_score_up"].cast<double>();
         card.skill_life_recovery = dict["skill_life_recovery"].cast<int>();
         card.episode1_read = dict["episode1_read"].cast<bool>();
         card.episode2_read = dict["episode2_read"].cast<bool>();
@@ -1592,7 +1592,7 @@ class SekaiDeckRecommend {
                     py_card.master_rank = card.masterRank;
                     py_card.level = card.level;
                     py_card.skill_level = card.skillLevel;
-                    py_card.skill_score_up = static_cast<int>(card.skill.scoreUp);
+                    py_card.skill_score_up = card.skill.scoreUp;
                     py_card.skill_life_recovery = static_cast<int>(card.skill.lifeRecovery);
                     py_card.episode1_read = card.episode1Read;
                     py_card.episode2_read = card.episode2Read;

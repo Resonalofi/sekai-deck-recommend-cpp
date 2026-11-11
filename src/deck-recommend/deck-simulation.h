@@ -45,7 +45,7 @@ struct HonorSimulationConfig {
 
 struct MysekaiFixtureSimulationConfig {
     bool useCurrent = true;
-    // Public API uses percent units; UserData stores 0.1 percent units.
+    // Public API uses percent units; master config supplies the stored rate scale.
     std::unordered_map<int, double> bonusRatePercent = {};
 };
 

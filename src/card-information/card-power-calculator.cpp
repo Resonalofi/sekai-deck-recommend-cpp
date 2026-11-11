@@ -129,32 +129,60 @@ BasePower CardPowerCalculator::getBasePower(const UserCard &userCard, const Card
 
 int CardPowerCalculator::getAreaItemBonusPower(const std::vector<AreaItemLevel> &userAreaItemLevels, const BasePower &basePower, int characterId, int unit, bool sameUnit, int attr, bool sameAttr)
 {
-    double areaItemBonus[3] = {0, 0, 0};
-    for (auto& it : userAreaItemLevels) {
-        if ((it.targetUnit == Enums::Unit::any || it.targetUnit == unit) &&
-            (it.targetCardAttr == Enums::Attr::any || it.targetCardAttr == attr) &&
-            (it.targetGameCharacterId == 0 || it.targetGameCharacterId == characterId)) {
-            bool allMatch = (it.targetUnit != Enums::Unit::any && sameUnit) ||
-                            (it.targetCardAttr != Enums::Attr::any && sameAttr);
-            double rates[3] = {0, 0, 0};
-            if (allMatch) {
-                rates[0] = it.power1AllMatchBonusRate;
-                rates[1] = it.power2AllMatchBonusRate;
-                rates[2] = it.power3AllMatchBonusRate;
-            } else {
-                rates[0] = it.power1BonusRate;
-                rates[1] = it.power2BonusRate;
-                rates[2] = it.power3BonusRate;
-            }
-            for (int i = 0; i < 3; ++i) {
-                areaItemBonus[i] += rates[i] * 0.01 * basePower[i];
-            }
+    // GetAreaItemBuffList adds rates within each category first. Its surviving
+    // category order is then used by GetAreaItemPowerBy's float32 accumulation.
+    std::array<std::array<float, 3>, 4> groups{};
+    std::array<bool, 4> present{};
+    std::array<int, 4> order{};
+    int groupCount = 0;
+    for (const auto& it : userAreaItemLevels) {
+        int group;
+        bool allMatch = false;
+        if (it.targetGameCharacterId != 0) {
+            if (it.targetGameCharacterId != characterId) continue;
+            group = 0;
+        } else if (it.targetUnit != Enums::Unit::any) {
+            if (it.targetUnit != unit) continue;
+            group = 1;
+            allMatch = sameUnit;
+        } else if (it.targetCardAttr != Enums::Attr::any) {
+            if (it.targetCardAttr != attr) continue;
+            group = 2;
+            allMatch = sameAttr;
+        } else {
+            group = 3;
         }
+        if (!present[group]) {
+            present[group] = true;
+            order[groupCount++] = group;
+        }
+        const float rates[3] = {
+            float(allMatch ? it.power1AllMatchBonusRate : it.power1BonusRate),
+            float(allMatch ? it.power2AllMatchBonusRate : it.power2BonusRate),
+            float(allMatch ? it.power3AllMatchBonusRate : it.power3BonusRate),
+        };
+        for (int i = 0; i < 3; ++i)
+            groups[group][i] += rates[i];
     }
-    // 三个维度单独计算后向下取整再累加
+    if (dataProvider.region == Region::CN || dataProvider.region == Region::TW || dataProvider.region == Region::KR) {
+        // CN/TW/KR 6.4 round each category rate to hundredths (ties to even),
+        // sum integer products across all three parameters, then divide once.
+        int scaledTotal = 0;
+        for (int i = 0; i < 3; ++i)
+            for (int index = 0; index < groupCount; ++index)
+                scaledTotal += basePower[i] * int(std::nearbyint(groups[order[index]][i] * 100.0f));
+        return scaledTotal / 10000;
+    }
     int total = 0;
     for (int i = 0; i < 3; ++i) {
-        total += std::floor(areaItemBonus[i]);
+        float bonus = 0;
+        for (int index = 0; index < groupCount; ++index) {
+            const int group = order[index];
+            const float rate = groups[group][i] * 0.01f;
+            const float addition = rate * float(basePower[i]);
+            bonus += addition;
+        }
+        total += int(std::floor(bonus));
     }
     return total;
 }
@@ -170,20 +198,21 @@ int CardPowerCalculator::getMultiUnitAreaItemBonusPower(
     bool attrAllMatch
 )
 {
-    // 与客户端CardUtility.GetAreaItemBuffList(isMultiUnitDeck=true)一致：
+    // JP 7.1 CardUtility.GetAreaItemBuffList 启用多组合加成时：
     // 每行效果归入一个桶（角色/多组合/组合/支援组合/属性/全体），
     // 组合与支援组合同时存在时去掉三维比率和较小的一个（相等保留组合），
     // 之后若有多组合加成：剩下的组合桶的全员匹配额外加成>=多组合加成则去掉多组合加成，
-    // 否则该组合桶回退为普通比率。决策用float比率（与客户端一致），最终加成仍按行累加后逐维向下取整。
+    // 否则该组合桶回退为普通比率。最终按存活桶顺序做float32计算并逐维取整。
     enum Bucket : int { None = 0, Character, Multi, UnitBucket, SupportBucket, AttrBucket, AnyBucket, BucketCount };
     struct RowPick {
         Bucket bucket;
         bool allMatch;
     };
-    std::vector<RowPick> picks(userAreaItemLevels.size(), RowPick{None, false});
     std::array<std::array<float, 3>, BucketCount> buff{};
     std::array<std::array<float, 3>, BucketCount> baseBuff{};
     std::array<bool, BucketCount> present{};
+    std::array<Bucket, BucketCount> order{};
+    int groupCount = 0;
 
     for (size_t i = 0; i < userAreaItemLevels.size(); ++i) {
         const auto& it = userAreaItemLevels[i];
@@ -205,12 +234,14 @@ int CardPowerCalculator::getMultiUnitAreaItemBonusPower(
         } else {
             pick.bucket = AnyBucket;
         }
-        picks[i] = pick;
         if (pick.bucket == None)
             continue;
         float normal[3] = {float(it.power1BonusRate), float(it.power2BonusRate), float(it.power3BonusRate)};
         float allMatch[3] = {float(it.power1AllMatchBonusRate), float(it.power2AllMatchBonusRate), float(it.power3AllMatchBonusRate)};
-        present[pick.bucket] = true;
+        if (!present[pick.bucket]) {
+            present[pick.bucket] = true;
+            order[groupCount++] = pick.bucket;
+        }
         for (int k = 0; k < 3; ++k) {
             buff[pick.bucket][k] += pick.allMatch ? allMatch[k] : normal[k];
             baseBuff[pick.bucket][k] += normal[k];
@@ -241,25 +272,32 @@ int CardPowerCalculator::getMultiUnitAreaItemBonusPower(
         }
     }
 
-    double areaItemBonus[3] = {0, 0, 0};
-    for (size_t i = 0; i < userAreaItemLevels.size(); ++i) {
-        const auto& pick = picks[i];
-        if (pick.bucket == None || dropped[pick.bucket])
-            continue;
-        const auto& it = userAreaItemLevels[i];
-        bool allMatch = pick.allMatch && !useBaseRate[pick.bucket];
-        double rates[3] = {
-            allMatch ? it.power1AllMatchBonusRate : it.power1BonusRate,
-            allMatch ? it.power2AllMatchBonusRate : it.power2BonusRate,
-            allMatch ? it.power3AllMatchBonusRate : it.power3BonusRate,
-        };
+    // Multi-unit effects are activated by master data, including when they
+    // become available in CN/TW/KR; retain each region's rate arithmetic.
+    if (dataProvider.region == Region::CN || dataProvider.region == Region::TW || dataProvider.region == Region::KR) {
+        int scaledTotal = 0;
         for (int k = 0; k < 3; ++k) {
-            areaItemBonus[k] += rates[k] * 0.01 * basePower[k];
+            for (int index = 0; index < groupCount; ++index) {
+                const auto bucket = order[index];
+                if (dropped[bucket]) continue;
+                const float percent = useBaseRate[bucket] ? baseBuff[bucket][k] : buff[bucket][k];
+                scaledTotal += basePower[k] * int(std::nearbyint(percent * 100.0f));
+            }
         }
+        return scaledTotal / 10000;
     }
     int total = 0;
     for (int k = 0; k < 3; ++k) {
-        total += std::floor(areaItemBonus[k]);
+        float bonus = 0;
+        for (int index = 0; index < groupCount; ++index) {
+            const auto bucket = order[index];
+            if (dropped[bucket]) continue;
+            const float percent = useBaseRate[bucket] ? baseBuff[bucket][k] : buff[bucket][k];
+            const float rate = percent * 0.01f;
+            const float addition = rate * float(basePower[k]);
+            bonus += addition;
+        }
+        total += int(std::floor(bonus));
     }
     return total;
 }
@@ -281,6 +319,12 @@ int CardPowerCalculator::getCharacterBonusPower(const BasePower &basePower, int 
         characterRank.power2BonusRate,
         characterRank.power3BonusRate
     };
+    if (dataProvider.region == Region::CN || dataProvider.region == Region::TW || dataProvider.region == Region::KR) {
+        int scaledTotal = 0;
+        for (int i = 0; i < 3; ++i)
+            scaledTotal += basePower[i] * int(std::nearbyint(float(rates[i]) * 100.0f));
+        return scaledTotal / 10000;
+    }
     int total = 0;
     for (int i = 0; i < 3; ++i) {
         total += std::floor(float(rates[i]) * float(0.01) * float(basePower[i]));
@@ -291,23 +335,33 @@ int CardPowerCalculator::getCharacterBonusPower(const BasePower &basePower, int 
 int CardPowerCalculator::getFixtureBonusPower(const BasePower &basePower, int characterId, std::optional<int> limit)
 {
     auto& userFixtureBonuses = dataProvider.userData->userMysekaiFixtureGameCharacterPerformanceBonuses;
-    if (userFixtureBonuses.empty()) {
+    const auto bonus = std::find_if(userFixtureBonuses.begin(), userFixtureBonuses.end(), [characterId](const auto& row) {
+        return row.gameCharacterId == characterId;
+    });
+    if (bonus == userFixtureBonuses.end())
         return 0;
-    }
-    // 寻找对应的加成，如果没有任何加成会空
-    try {
-        auto& fixtureBonus = findOrThrow(userFixtureBonuses, [&](auto& it) {
-            return it.gameCharacterId == characterId;
-        });
-        double rate = fixtureBonus.totalBonusRate;
-        if (limit.has_value()) 
-            rate = std::min(rate, double(limit.value()));
-        // 按各个综合分别计算加成，其中totalBonusRate单位是0.1%
-        int total = sumPower(basePower) * rate * 0.001;
-        return std::floor(total);
-    } catch (const ElementNoFoundError &e) {
+
+    const auto& master = *dataProvider.masterData;
+    if (master.fixtureBonusLimit)
+        limit = limit ? std::min(*limit, *master.fixtureBonusLimit) : master.fixtureBonusLimit;
+    // The client returns a zero limit when neither limit table has an entry.
+    if (!limit)
         return 0;
-    }
+
+    const float percent = float(bonus->totalBonusRate) / master.fixtureBonusRateScale;
+    const float fraction = percent / 100.0f;
+    const float limitPercent = float(*limit) / master.fixtureBonusRateScale;
+    // GetFixtureBonusLimitRate: round to 3 decimals (ties to even), then
+    // truncate to 2; its caller converts the resulting float32 percent to a ratio.
+    double integral;
+    const double remainder = std::modf(double(limitPercent) * 1000.0, &integral);
+    if (remainder > 0.5 || (remainder == 0.5 && std::fmod(integral, 2.0) != 0))
+        ++integral;
+    const float rounded = float(integral / 1000.0);
+    const float truncated = float(std::trunc(double(rounded) * 100.0) / 100.0);
+    const float capped = std::min(fraction, truncated / 100.0f);
+    const float total = capped * float(sumPower(basePower));
+    return int(std::floor(total));
 }
 
 int CardPowerCalculator::getGateBonusPower(const BasePower &basePower, const std::vector<MysekaiGateBonus> &userGateBonuses, const std::vector<int> &cardUnits)
@@ -324,10 +378,13 @@ int CardPowerCalculator::getGateBonusPower(const BasePower &basePower, const std
             break;
         }
     }
-    const double powerBonusRate = selected == nullptr ? 0.0 : selected->powerBonusRate;
-    // 按各个综合分别计算加成，其中powerBonusRate单位是1%
-    double total = sumPower(basePower) * powerBonusRate * 0.01;
-    return std::floor(total);
+    const float powerBonusRate = selected == nullptr ? 0.0f : float(selected->powerBonusRate);
+    const float fraction = powerBonusRate / 100.0f;
+    const float total = fraction * float(sumPower(basePower));
+    // GetGateBonus truncates the float32 product to two decimal places before
+    // FloorToInt. The decimal conversion itself uses double, as in the IPA.
+    const float truncated = float(std::trunc(double(total) * 100.0) / 100.0);
+    return int(std::floor(truncated));
 }
 
 int CardPowerCalculator::sumPower(const BasePower &power)

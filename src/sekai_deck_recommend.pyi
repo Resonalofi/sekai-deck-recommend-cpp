@@ -240,7 +240,7 @@ class RecommendCard:
         master_rank (int): Master rank of the card
         level (int): Level of the card
         skill_level (int): Skill level of the card
-        skill_score_up (int): Skill score up of the card
+        skill_score_up (float): Skill score up of the card
         skill_life_recovery (int): Skill life recovery of the card
         episode1_read (bool): Whether episode 1 is read
         episode2_read (bool): Whether episode 2 is read
@@ -263,7 +263,7 @@ class RecommendCard:
     master_rank: int
     level: int
     skill_level: int
-    skill_score_up: int
+    skill_score_up: float
     skill_life_recovery: int
     episode1_read: bool
     episode2_read: bool

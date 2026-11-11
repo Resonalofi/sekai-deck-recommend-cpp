@@ -48,13 +48,12 @@ std::optional<CardDetail> CardCalculator::getCardDetail(
     // 判断强制使用画布
     hasCanvasBonus |= cfg.canvas;
 
-    // wl终章限制玩偶加成：终章1上限2%，终章2上限6%
     std::optional<int> fixtureBonusLimit = std::nullopt;
     if (eventConfig.has_value()) {
-        if (eventConfig->eventId == finalChapterEventId)
-            fixtureBonusLimit = 20;
-        else if (eventConfig->eventId == finalChapter2EventId)
-            fixtureBonusLimit = 60;
+        const auto& limits = dataProvider.masterData->eventFixtureBonusLimits;
+        const auto limit = limits.find(eventConfig->eventId);
+        if (limit != limits.end())
+            fixtureBonusLimit = limit->second;
     }
 
     auto userCard0 = this->cardService.applyCardConfig(userCard, card, cfg);

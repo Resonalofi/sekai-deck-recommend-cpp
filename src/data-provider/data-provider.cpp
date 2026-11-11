@@ -100,7 +100,7 @@ void DataProvider::init()
                     for (auto& item : masterData->worldBlooms) {
                         // 只匹配真实WL2章节；假活动的章节按角色ID升序合成，顺序与真实章节不同
                         if (characters.count(item.gameCharacterId) && item.chapterNo == ref->chapter
-                            && item.eventId > 140 && item.eventId < 1000) {
+                            && item.eventId > 140 && item.eventId < finalChapterEventId) {
                             userData->userCharacterFinalChapterHonorEventBonusMap[item.gameCharacterId] = 50.0;
                         }
                     }

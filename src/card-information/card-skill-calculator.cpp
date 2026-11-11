@@ -13,7 +13,7 @@ CardSkillDetailMap CardSkillCalculator::getCardSkill(
     std::array<SkillDetail, 2> details{};
     int detailCount = 1;
     details[0] = getSkillDetail(userCard, card, false);
-    if (card.specialTrainingSkillId != 0)
+    if (card.specialTrainingSkillId != 0 && userCard.specialTrainingStatus == Enums::SpecialTrainingStatus::done)
         details[detailCount++] = getSkillDetail(userCard, card, true);
 
     for (int detailIndex = 0; detailIndex < detailCount; ++detailIndex) {
@@ -93,7 +93,6 @@ SkillDetail CardSkillCalculator::getSkillDetail(const UserCard &userCard, const 
             double current = skillEffectDetail.activateEffectValue;
             // 组分
             if (skillEffect.skillEnhance.has_value()) {
-                ret.sameUnitScoreUp = true;
                 ret.sameUnitScoreUpUnit = skillEffect.skillEnhance->skillEnhanceCondition.unit;
                 ret.sameUnitScoreUp = skillEffect.skillEnhance->activateEffectValue;
             }

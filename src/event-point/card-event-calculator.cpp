@@ -2,29 +2,42 @@
 
 double CardEventCalculator::getEventDeckBonus(int eventId, const Card &card)
 {
-    auto& eventDeckBonuses = this->dataProvider.masterData->eventDeckBonuses;
-    auto& gameCharacterUnits = this->dataProvider.masterData->gameCharacterUnits;
-    double maxBonus = 0;
+    const auto& master = *dataProvider.masterData;
+    const auto& character = findOrThrow(master.gameCharacters, [&](const GameCharacter& row) {
+        return row.id == card.characterId;
+    });
+    const int unit = card.supportUnit == Enums::Unit::none ? character.unit : card.supportUnit;
+    const auto& characterUnit = findOrThrow(master.gameCharacterUnits, [&](const GameCharacterUnit& row) {
+        return row.gameCharacterId == card.characterId && row.unit == unit;
+    });
 
-    for (const auto& it : eventDeckBonuses) {
-        if (it.eventId == eventId && (it.cardAttr == Enums::Attr::null || it.cardAttr == card.attr)) {
-            // 无指定角色
-            if (it.gameCharacterUnitId == 0) {
-                maxBonus = std::max(maxBonus, it.bonusRate);
-            } else {
-                auto unit = findOrThrow(gameCharacterUnits, [it](const GameCharacterUnit& a) { 
-                    return a.id == it.gameCharacterUnitId; 
-                }, [&]() { return "Game character unit not found for gameCharacterUnitId=" + std::to_string(it.gameCharacterUnitId); });
-                // 角色不匹配
-                if (unit.gameCharacterId != card.characterId) continue;
-                // 非虚拟歌手或者组合正确（或者无组合）的虚拟歌手，享受全量加成
-                if (card.characterId < 21 || card.supportUnit == unit.unit || card.supportUnit == Enums::Unit::none) {
-                    maxBonus = std::max(maxBonus, it.bonusRate);
-                }
-            }
+    float bonus = 0;
+    // GetEventDeckBonusRate uses the first matching master row. A character
+    // match returns directly; the attribute-only branch adds the VS bonus below.
+    for (const auto& row : master.eventDeckBonuses) {
+        if (row.eventId != eventId)
+            continue;
+        if (row.gameCharacterUnitId == characterUnit.id &&
+            (row.cardAttr == Enums::Attr::null || row.cardAttr == card.attr))
+            return float(row.bonusRate);
+        if (row.gameCharacterUnitId == 0 && row.cardAttr == card.attr) {
+            bonus = float(row.bonusRate);
+            break;
         }
     }
-    return maxBonus;
+
+    if (character.unit == Enums::Unit::piapro && card.supportUnit == Enums::Unit::none) {
+        for (const auto& row : master.eventDeckBonuses) {
+            if (row.eventId != eventId || row.gameCharacterUnitId == 0 || row.cardAttr == Enums::Attr::null)
+                continue;
+            const auto& target = findOrThrow(master.gameCharacterUnits, [&](const GameCharacterUnit& entry) {
+                return entry.id == row.gameCharacterUnitId;
+            });
+            if (target.gameCharacterId == card.characterId)
+                return float(bonus + master.virtualSingerEventBonus);
+        }
+    }
+    return bonus;
 }
 
 CardEventBonusInfo CardEventCalculator::getCardEventBonus(const UserCard &userCard, int eventId)
