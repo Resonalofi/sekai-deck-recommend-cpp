@@ -222,10 +222,6 @@ void BaseDeckRecommend::findBestCardsDFS(
     // 递归每层重复赋同一值无副作用
     dfsInfo.queueLimit = limit;
 
-    // 防止挑战Live卡的数量小于允许上场的数量导致无法组队
-    if (isChallengeLive) {
-        member = std::min(member, int(cardDetails.size()));
-    }
     // 已经是完整卡组，计算当前卡组的值
     if (int(deckCards.size()) == member) {
         if (cfg.target == RecommendTarget::Power && dfsInfo.hasUsablePowerFloor(limit)) {
@@ -471,9 +467,7 @@ void BaseDeckRecommend::findBestCardsDFS(
         upperBound.power.total = maxPower;
         upperBound.eventBonus = bonusBound;
         upperBound.supportDeckBonus = dfsInfo.scoreBound.supportDeckBonus;
-        // 真实卡组恒以 cardCount=5 评分，member<5 时 order 末尾回落到队长位，
-        // 即空位复用队长技能；上界必须用同一形状，否则会走进短卡组分支读越界。
-        upperBound.cardCount = 5;
+        upperBound.cardCount = member;
         std::copy(skillBounds.begin(), skillBounds.begin() + skillBoundCount, upperBound.skillScoreUps.begin());
         std::fill(
             upperBound.skillScoreUps.begin() + skillBoundCount,

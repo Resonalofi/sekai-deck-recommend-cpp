@@ -54,7 +54,7 @@ SortedSkillDetails LiveCalculator::getSortedSkillDetails(
         return SortedSkillDetails{*skillDetails, false};
     }
 
-    int cardNum = (int)deckDetail.cards.size();
+    const int cardNum = int(deckDetail.cards.size());
     std::vector<DeckCardSkillDetail> skills{};
 
     if (Enums::LiveType::isMulti(liveType)) {
@@ -124,7 +124,7 @@ SortedSkillDetails LiveCalculator::getSortedSkillDetails(
     }
 
     if (cardNum < 5) {
-        // 如果卡牌数量不足5张，中间技能需要留空
+        // 挑战Live不足5张时，中间技能需要留空
         DeckCardSkillDetail emptySkill{};
         std::vector<DeckCardSkillDetail> emptySkills(5 - cardNum, emptySkill);
         // 将有效技能填充到前面、中间留空、第6个固定为C位
@@ -237,7 +237,7 @@ int LiveCalculator::getLiveScoreByDeck(
     std::optional<int> multiTeammatePower
 )
 {
-    if (Enums::LiveType::isMulti(liveType) && deckDetail.cards.size() == 5) {
+    if (Enums::LiveType::isMulti(liveType)) {
         auto selfSkill = this->getMultiLiveSkill(deckDetail);
         const double otherScoreUp = multiTeammateScoreUp.has_value()
             ? static_cast<double>(multiTeammateScoreUp.value())
@@ -318,7 +318,7 @@ int LiveCalculator::getLiveScoreByDeck(
     std::optional<int> multiTeammatePower
 )
 {
-    if (Enums::LiveType::isMulti(liveType) && deckDetail.cardCount == 5) {
+    if (Enums::LiveType::isMulti(liveType)) {
         double selfScoreUp = deckDetail.skillScoreUps[0];
         for (int i = 1; i < 5; ++i)
             selfScoreUp += deckDetail.skillScoreUps[i] / 5.;
@@ -384,29 +384,10 @@ int LiveCalculator::getLiveScoreByDeck(
         return int(rate * deckDetail.power.total * 4 + activeBonus);
     }
 
-    std::array<double, 10> skills{};
-    int skillCount = 0;
-
-    if (Enums::LiveType::isMulti(liveType)) {
-        const double selfScoreUp = deckDetail.multiLiveScoreUp;
-        const double otherScoreUp = multiTeammateScoreUp.has_value()
-            ? static_cast<double>(multiTeammateScoreUp.value())
-            : selfScoreUp;
-        skills = {
-            selfScoreUp,
-            otherScoreUp,
-            otherScoreUp,
-            otherScoreUp,
-            otherScoreUp,
-            selfScoreUp,
-        };
-        skillCount = 6;
-    }
-    else {
-        std::copy_n(deckDetail.skillScoreUps.begin(), deckDetail.cardCount, skills.begin());
-        skills[deckDetail.cardCount] = deckDetail.skillScoreUps[0];
-        skillCount = deckDetail.cardCount + 1;
-    }
+    std::array<double, 6> skills{};
+    std::copy_n(deckDetail.skillScoreUps.begin(), deckDetail.cardCount, skills.begin());
+    skills[deckDetail.cardCount] = deckDetail.skillScoreUps[0];
+    int skillCount = deckDetail.cardCount + 1;
 
     bool skillSorted = false;
     if (liveSkillOrder == LiveSkillOrder::specific) {

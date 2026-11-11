@@ -112,6 +112,8 @@ void BaseDeckRecommend::runRecommendAlgorithm(
 
     if (algorithm == RecommendAlgorithm::DFS) {
         // 使用DFS
+        const int member = isChallengeLive
+            ? std::min(config.member, static_cast<int>(pool.size())) : config.member;
         info.deckCards.clear();
         info.deckCharacters = 0;
         info.deckCommonUnitMask = (uint16_t{1} << UNIT_MAX) - 1;
@@ -151,25 +153,11 @@ void BaseDeckRecommend::runRecommendAlgorithm(
         const bool wlPrune = !hasMultiUnitPower &&
             (eventConfig.eventType != Enums::EventType::world_bloom || eventConfig.eventUnit != 0) &&
             canMakeDeck(liveType, eventConfig.eventType, pool, config.member);
-        // 分区并行会改变顶层遍历顺序，只在「卡组得分与卡内次序无关」时才成立。
-        // 三个条件缺一不可：
-        //   1. Score 目标——Power/Skill/Mysekai 在 559~576 行用 preCard 做
-        //      「肯定弱于上一张已访问卡就跳过」的有损启发式剪枝，结果本身
-        //      依赖顶层遍历顺序，分区会改变它们的（近似）结果。
-        //   2. 多人——getLiveScoreByDeck 的多人 5 卡快路径把得分算成
-        //      skillScoreUps[0] + Σ skillScoreUps[1..4]/5，对位置 1~4 对称，
-        //      只依赖谁在位置 0（由最强技能确定性选出）。solo/auto 走通用
-        //      路径，那里 skills[cardCount] = skillScoreUps[0] 的环绕元素、
-        //      以及 specific 策略的置换都让得分对卡内次序敏感。
-        //   3. member == 5——只有满 5 卡才进那条对称快路径；cardCount < 5 会
-        //      落到通用路径并触发补零搬移，同样变成次序敏感。
-        // 实测依据：auto 与 multi member=4 的用例在仅分区（无共享下界）下即可
-        // 复现差异，且同一套卡在不同 limit 下算出不同 liveScore——该性质在
-        // 0d9c352（本轮改动之前）就已存在，不是并行引入的。
+        // 分区并行沿用已验证的五卡协力得分路径，成员位只通过实效之和参与评分。
+        // Power/Skill/Mysekai 的 preCard 启发式依赖遍历顺序；单人指定技能顺序也依赖卡位。
         const bool orderIndependentScore =
             config.target == RecommendTarget::Score
-            && Enums::LiveType::isMulti(liveType)
-            && config.member == 5;
+            && Enums::LiveType::isMulti(liveType);
 #if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
         // 单线程 WASM 构建没有线程支持，分区并行退化为串行
         const int configuredDfsThreads = 1;
@@ -181,7 +169,7 @@ void BaseDeckRecommend::runRecommendAlgorithm(
             findBestCardsDFS(
                 liveType, config, dfsCards, supportCards, scoreFunc,
                 info,
-                config.limit, isChallengeLive, config.member, honorBonus,
+                config.limit, isChallengeLive, member, honorBonus,
                 eventConfig.eventType, eventConfig.eventId, fixedCards,
                 wlPrune
             );
@@ -208,7 +196,7 @@ void BaseDeckRecommend::runRecommendAlgorithm(
                 dfsEngines[slot].findBestCardsDFS(
                     liveType, config, dfsCards, dfsSupportCards[slot], scoreFunc,
                     dfsInfos[slot],
-                    config.limit, isChallengeLive, config.member, honorBonus,
+                    config.limit, isChallengeLive, member, honorBonus,
                     eventConfig.eventType, eventConfig.eventId, fixedCards,
                     wlPrune, false, dfsThreads, slot
                 );
@@ -291,9 +279,10 @@ BestPermutationResult BaseDeckRecommend::getBestPermutation(
     struct BestPermutationContext {
         const std::function<Score(const DeckScoreDetail &)> &scoreFunc;
         const DeckRecommendConfig& config;
+        int cardCount;
         BestPermutationResult result{};
         double maxValue{};
-    } context{scoreFunc, config};
+    } context{scoreFunc, config, static_cast<int>(deckCards.size())};
     const auto consumeState = [context = &context](
         int power,
         double eventBonus,
@@ -308,7 +297,7 @@ BestPermutationResult BaseDeckRecommend::getBestPermutation(
             .eventBonus = eventBonus,
             .supportDeckBonus = supportDeckBonus,
             .skillScoreUps = skillScoreUps,
-            .cardCount = 5,
+            .cardCount = context->cardCount,
             .multiLiveScoreUp = multiLiveScoreUp,
         };
         const auto score = context->scoreFunc(scoreDetail);
@@ -377,7 +366,7 @@ BestPermutationResult BaseDeckRecommend::getBestPermutation(
             supportCards,
             [&consumeState](const DeckStateView& state) {
                 std::array<double, 5> skillScoreUps{};
-                for (int pos = 0; pos < 5; ++pos)
+                for (int pos = 0; pos < state.cardCount; ++pos)
                     skillScoreUps[pos] = state.skills[state.order[pos]].scoreUp;
                 consumeState(
                     state.power.total.total,

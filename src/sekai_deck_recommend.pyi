@@ -155,7 +155,7 @@ class DeckRecommendOptions:
         best_skill_as_leader (bool): Whether to use the best skill card as leader, default is True
         multi_live_score_up_lower_bound (float): Lower bound of multi live score up, only available when live_type is "multi", default is 0
         skill_order_choose_strategy (str): Strategy for skill order choose in ["average", "max", "min", "specific"], default is "average"
-        specific_skill_order (List[int]): Specific skill order starting from 0, only required when skill_order_choose_strategy is "specific", default is None
+        specific_skill_order (List[int]): Zero-based activation order with member entries, required for "specific". The leader encore remains last.
         ga_options (DeckRecommendGaOptions): Genetic algorithm options
         area_item_config (dict): Area item simulation. Supports mode current/empty/max/uniform/minimum and per-item levels in items.
         character_rank_config (dict): Character rank simulation with mode current/max/fixed and per-character overrides.
