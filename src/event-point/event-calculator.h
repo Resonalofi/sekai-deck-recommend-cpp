@@ -13,13 +13,17 @@ class EventCalculator {
     DataProvider dataProvider;
     CardEventCalculator cardEventCalculator;
     LiveCalculator liveCalculator;
+    const int multiLiveTeammateScoreBonusLimit;
 
 public:
 
     EventCalculator(const DataProvider& dataProvider) : 
         dataProvider(dataProvider),
         cardEventCalculator(dataProvider),
-        liveCalculator(dataProvider) {}
+        liveCalculator(dataProvider),
+        // JP raised this cap in 6.5.0; other regions may share JP master data.
+        multiLiveTeammateScoreBonusLimit(dataProvider.region == Region::JP
+            ? dataProvider.masterData->eventScoreCeiling / 340000 : 13) {}
 
     /**
     * 计算活动PT

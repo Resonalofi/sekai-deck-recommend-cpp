@@ -36,6 +36,7 @@ struct MasterDataCore {
     std::vector<Event> events;
     std::vector<EventItem> eventItems;
     std::vector<EventRarityBonusRate> eventRarityBonusRates;
+    int eventScoreCeiling = 0;
     float virtualSingerEventBonus = 0;
     std::vector<GameCharacter> gameCharacters;
     std::vector<GameCharacterUnit> gameCharacterUnits;
@@ -94,6 +95,7 @@ public:
     std::vector<Event>& events;
     std::vector<EventItem>& eventItems;
     std::vector<EventRarityBonusRate>& eventRarityBonusRates;
+    int& eventScoreCeiling;
     float& virtualSingerEventBonus;
     std::vector<GameCharacter>& gameCharacters;
     std::vector<GameCharacterUnit>& gameCharacterUnits;

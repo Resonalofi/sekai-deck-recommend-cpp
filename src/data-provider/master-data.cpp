@@ -160,6 +160,7 @@ MasterData::MasterData(std::shared_ptr<MasterDataCore> core)
       events(storage->events),
       eventItems(storage->eventItems),
       eventRarityBonusRates(storage->eventRarityBonusRates),
+      eventScoreCeiling(storage->eventScoreCeiling),
       virtualSingerEventBonus(storage->virtualSingerEventBonus),
       gameCharacters(storage->gameCharacters),
       gameCharacterUnits(storage->gameCharacterUnits),
@@ -581,11 +582,15 @@ void MasterData::loadFromStrings(MasterDataStrings& data) {
 void MasterData::loadBonusData(const std::map<std::string, json>& documents) {
     fixtureBonusRateScale = 0;
     virtualSingerEventBonus = 0;
+    eventScoreCeiling = 0;
     fixtureBonusLimit.reset();
     eventFixtureBonusLimits.clear();
     for (const auto& entry : documents.at("configs")) {
         const auto key = entry.at("configKey").get<std::string>();
-        if (key == "mysekai_fixture_game_character_bonus_rate_scale" || key == "event_piapro_point_bonus") {
+        if (key == "event_score_ceiling") {
+            eventScoreCeiling = std::stoi(entry.at("value").get<std::string>());
+        }
+        else if (key == "mysekai_fixture_game_character_bonus_rate_scale" || key == "event_piapro_point_bonus") {
             const float value = std::stof(entry.at("value").get<std::string>());
             if (key == "event_piapro_point_bonus")
                 virtualSingerEventBonus = value;
