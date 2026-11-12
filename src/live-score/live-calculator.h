@@ -36,6 +36,11 @@ struct LiveDetail {
     std::optional<DeckDetail> deck = std::nullopt;
 };
 
+struct MultiLiveScores {
+    int selfScore;
+    int teammateScoreSum;
+};
+
 struct LiveSkill {
     std::optional<int> seq = std::nullopt;
     int cardId;
@@ -88,7 +93,8 @@ public:
         LiveSkillOrder liveSkillOrder,
         std::optional<std::vector<int>> specificSkillOrder = std::nullopt,
         const std::optional<std::vector<DeckCardSkillDetail>>& skillDetails = std::nullopt,
-        std::optional<int> multiTeammateScoreUp = std::nullopt
+        std::optional<int> multiTeammateScoreUp = std::nullopt,
+        std::optional<int> multiTeammatePower = std::nullopt
     );
 
     /**
@@ -149,6 +155,24 @@ public:
         const DeckDetail &deckDetail, 
         const MusicMeta &musicMeta, 
         int liveType,
+        LiveSkillOrder liveSkillOrder,
+        std::optional<std::vector<int>> specificSkillOrder = std::nullopt,
+        std::optional<int> multiTeammateScoreUp = std::nullopt,
+        std::optional<int> multiTeammatePower = std::nullopt
+    );
+
+    MultiLiveScores getMultiLiveScoresByDeck(
+        const DeckDetail& deckDetail,
+        const MusicMeta& musicMeta,
+        LiveSkillOrder liveSkillOrder,
+        std::optional<std::vector<int>> specificSkillOrder = std::nullopt,
+        std::optional<int> multiTeammateScoreUp = std::nullopt,
+        std::optional<int> multiTeammatePower = std::nullopt
+    );
+
+    MultiLiveScores getMultiLiveScoresByDeck(
+        const DeckScoreDetail& deckDetail,
+        const MusicMeta& musicMeta,
         LiveSkillOrder liveSkillOrder,
         std::optional<std::vector<int>> specificSkillOrder = std::nullopt,
         std::optional<int> multiTeammateScoreUp = std::nullopt,

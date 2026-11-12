@@ -151,11 +151,11 @@ class DeckRecommendOptions:
         keep_after_training_state (bool): Whether to keep after-training state of bfes cards, default is False
         multi_unit_bonus_evaluation (str): Area item multi_unit evaluation: "by_deck" (default), "force_on", or "force_off".
         multi_live_teammate_score_up (int): Score up of single multi-live teammate, default is None (None means copying self score up)
-        multi_live_teammate_power (int): Power of single multi-live teammate, default is None (None means copying self power)
+        multi_live_teammate_power (int): Power of each of four teammates; used for praise, encore ownership and teammate PT contribution under the same-chart/AP assumption. None copies self power.
         best_skill_as_leader (bool): Whether to use the best skill card as leader, default is True
         multi_live_score_up_lower_bound (float): Lower bound of multi live score up, only available when live_type is "multi", default is 0
         skill_order_choose_strategy (str): Strategy for skill order choose in ["average", "max", "min", "specific"], default is "average"
-        specific_skill_order (List[int]): Zero-based activation order with member entries, required for "specific". The leader encore remains last.
+        specific_skill_order (List[int]): Zero-based activation order with member entries, required for "specific". Encore remains last; multiplayer uses the higher-power player's skill (self on ties).
         ga_options (DeckRecommendGaOptions): Genetic algorithm options
         area_item_config (dict): Area item simulation. Supports mode current/empty/max/uniform/minimum and per-item levels in items.
         character_rank_config (dict): Character rank simulation with mode current/max/fixed and per-character overrides.

@@ -92,6 +92,8 @@ struct DeckScoreDetail {
     std::optional<double> supportDeckBonus = std::nullopt;
     std::array<double, 5> skillScoreUps{};
     int cardCount = 0;
+    // DFS bounds cover either encore owner across the teammate-power threshold.
+    bool scoreUpperBound = false;
     double multiLiveScoreUp = 0;
 };
 

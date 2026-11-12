@@ -54,13 +54,23 @@ Score EventCalculator::getDeckScoreAndEventPoint(
     if (eventType == Enums::EventType::world_bloom && !supportDeckBonus.has_value()) 
         throw std::runtime_error("Support deck bonus is undefined");
 
-    auto liveScore = this->liveCalculator.getLiveScoreByDeck(
-        deckDetail, musicMeta, liveType, 
-        liveSkillOrder, specificSkillOrder,
-        multiTeammateScoreUp, multiTeammatePower
-    );
+    int liveScore;
+    int otherScore = 0;
+    if (Enums::LiveType::isMulti(liveType)) {
+        const auto scores = liveCalculator.getMultiLiveScoresByDeck(
+            deckDetail, musicMeta, liveSkillOrder, specificSkillOrder,
+            multiTeammateScoreUp, multiTeammatePower
+        );
+        liveScore = scores.selfScore;
+        otherScore = scores.teammateScoreSum;
+    }
+    else {
+        liveScore = liveCalculator.getLiveScoreByDeck(
+            deckDetail, musicMeta, liveType, liveSkillOrder, specificSkillOrder
+        );
+    }
     auto eventPoint = this->getEventPoint(liveType, eventType, liveScore, musicMeta.event_rate,
-        deckBonus.value_or(0) + supportDeckBonus.value_or(0));
+        deckBonus.value_or(0) + supportDeckBonus.value_or(0), 1, otherScore);
 
     Score ret{};
     ret.score = eventPoint;
@@ -87,14 +97,24 @@ Score EventCalculator::getDeckScoreAndEventPoint(
     if (eventType == Enums::EventType::world_bloom && !supportDeckBonus.has_value())
         throw std::runtime_error("Support deck bonus is undefined");
 
-    auto liveScore = this->liveCalculator.getLiveScoreByDeck(
-        deckDetail, musicMeta, liveType,
-        liveSkillOrder, specificSkillOrder,
-        multiTeammateScoreUp, multiTeammatePower
-    );
+    int liveScore;
+    int otherScore = 0;
+    if (Enums::LiveType::isMulti(liveType)) {
+        const auto scores = liveCalculator.getMultiLiveScoresByDeck(
+            deckDetail, musicMeta, liveSkillOrder, specificSkillOrder,
+            multiTeammateScoreUp, multiTeammatePower
+        );
+        liveScore = scores.selfScore;
+        otherScore = scores.teammateScoreSum;
+    }
+    else {
+        liveScore = liveCalculator.getLiveScoreByDeck(
+            deckDetail, musicMeta, liveType, liveSkillOrder, specificSkillOrder
+        );
+    }
     auto eventPoint = this->getEventPoint(
         liveType, eventType, liveScore, musicMeta.event_rate,
-        deckBonus.value_or(0) + supportDeckBonus.value_or(0)
+        deckBonus.value_or(0) + supportDeckBonus.value_or(0), 1, otherScore
     );
 
     Score ret{};

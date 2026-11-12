@@ -109,6 +109,7 @@ bool cannotBeatFifthCardScoreBound(
     upperBound.supportDeckBonus = dfsInfo.scoreBound.supportDeckBonus;
     upperBound.skillScoreUps = skillBounds;
     upperBound.cardCount = 5;
+    upperBound.scoreUpperBound = true;
     upperBound.multiLiveScoreUp = skillBounds.front() + 0.2 * std::accumulate(
         skillBounds.begin() + 1, skillBounds.end(), 0.0
     );
@@ -278,7 +279,7 @@ void BaseDeckRecommend::findBestCardsDFS(
         }
     }
 
-    // 分数对综合力、技能和活动加成单调；分别取严格上界后仍落后才可整枝。
+    // 上界对综合力、技能和加成单调；协力额外覆盖返场归属切换两侧。
     // 适用条件与与节点无关的加成上界由调用方一次算好，见 recommendHighScoreDeck。
     if (dfsInfo.scoreBound.enabled && dfsInfo.hasUsableTargetFloor(limit)) {
         const int remaining = member - static_cast<int>(deckCards.size());
@@ -468,6 +469,7 @@ void BaseDeckRecommend::findBestCardsDFS(
         upperBound.eventBonus = bonusBound;
         upperBound.supportDeckBonus = dfsInfo.scoreBound.supportDeckBonus;
         upperBound.cardCount = member;
+        upperBound.scoreUpperBound = true;
         std::copy(skillBounds.begin(), skillBounds.begin() + skillBoundCount, upperBound.skillScoreUps.begin());
         std::fill(
             upperBound.skillScoreUps.begin() + skillBoundCount,
