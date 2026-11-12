@@ -10,6 +10,7 @@ struct CardConfig {
     bool canvas = false;        // 强制使用画布加成
     std::optional<int> masterRank = std::nullopt;   // 指定专精等级
     std::optional<int> skillLevel = std::nullopt;   // 指定技能等级
+    std::optional<bool> skillAfterTraining = std::nullopt; // 指定双技能卡的花前/花后技能
 };
 
 class CardService {

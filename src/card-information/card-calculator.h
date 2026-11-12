@@ -49,6 +49,7 @@ struct CardDetail {
     int defaultImage;
     // [角色组全匹配 * 4 + 支援组全匹配 * 2 + 同属性]；未持有多组合家具时为空。
     std::vector<DeckCardPowerDetail> multiUnitPower;
+    std::optional<bool> skillAfterTraining = std::nullopt;
 
     const DeckCardPowerDetail& getMultiUnitPower(uint16_t commonUnits, bool sameAttr) const {
         const uint16_t characterUnit = characterId >= 21

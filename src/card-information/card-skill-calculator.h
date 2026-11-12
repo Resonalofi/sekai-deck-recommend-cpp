@@ -61,7 +61,8 @@ public:
     CardSkillDetailMap getCardSkill(
         const UserCard& userCard,
         const Card& card,
-        std::optional<double> scoreUpLimit = std::nullopt
+        std::optional<double> scoreUpLimit = std::nullopt,
+        std::optional<bool> skillAfterTraining = std::nullopt
     );
 
     /**

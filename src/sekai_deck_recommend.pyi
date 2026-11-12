@@ -56,6 +56,7 @@ class DeckRecommendSingleCardConfig:
         canvas (bool): Always use canvas bonus, default is False
         master_rank (int): Use this master rank (0-5; 5 is max), keeps the card as-is when None, default is None
         skill_level (int): Use this skill level (clamped to the rarity max), keeps the card as-is when None, default is None
+        skill_form (str): Select before_training or after_training independently of trained power, automatic when None
     """
 
     card_id: int
@@ -65,6 +66,7 @@ class DeckRecommendSingleCardConfig:
     canvas: Optional[bool]
     master_rank: Optional[int]
     skill_level: Optional[int]
+    skill_form: Optional[str]
 
     def to_dict(self) -> Dict[str, Any]:
         ...

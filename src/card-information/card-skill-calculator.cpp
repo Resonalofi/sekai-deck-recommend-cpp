@@ -4,7 +4,8 @@
 CardSkillDetailMap CardSkillCalculator::getCardSkill(
     const UserCard &userCard, 
     const Card &card, 
-    std::optional<double> scoreUpLimit
+    std::optional<double> scoreUpLimit,
+    std::optional<bool> skillAfterTraining
 )
 {
     double limit = scoreUpLimit.value_or(std::numeric_limits<double>::max());
@@ -12,8 +13,9 @@ CardSkillDetailMap CardSkillCalculator::getCardSkill(
     CardSkillDetailMap skillMap{};
     std::array<SkillDetail, 2> details{};
     int detailCount = 1;
-    details[0] = getSkillDetail(userCard, card, false);
-    if (card.specialTrainingSkillId != 0 && userCard.specialTrainingStatus == Enums::SpecialTrainingStatus::done)
+    details[0] = getSkillDetail(userCard, card, skillAfterTraining.value_or(false));
+    if (!skillAfterTraining.has_value() && card.specialTrainingSkillId != 0
+        && userCard.specialTrainingStatus == Enums::SpecialTrainingStatus::done)
         details[detailCount++] = getSkillDetail(userCard, card, true);
 
     for (int detailIndex = 0; detailIndex < detailCount; ++detailIndex) {

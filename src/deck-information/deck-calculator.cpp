@@ -99,6 +99,15 @@ void forEachSkillScoreState(
         }
 
         const auto& differentUnitSkill = card.skill.get(Enums::Unit::diff, unitCount - 1, 1);
+        // An explicit card form keeps one skill while retaining its reference
+        // or different-unit effects. Other cards still choose their best form.
+        if (card.skillAfterTraining.has_value()) {
+            if (referenceSkill.hasScoreUpReference)
+                after = {&referenceSkill, referenceScoreUp};
+            else if (differentUnitSkill.scoreUp > after.scoreUp)
+                after = {&differentUnitSkill, differentUnitSkill.scoreUp};
+            continue;
+        }
         if ((differentUnitSkill.skillId != after.detail->skillId || differentUnitSkill.scoreUp > after.scoreUp) &&
             differentUnitSkill.scoreUp > before.scoreUp) {
             before = {&differentUnitSkill, differentUnitSkill.scoreUp};

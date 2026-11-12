@@ -57,11 +57,17 @@ std::optional<CardDetail> CardCalculator::getCardDetail(
     }
 
     auto userCard0 = this->cardService.applyCardConfig(userCard, card, cfg);
+    if (cfg.skillAfterTraining.has_value()) {
+        if (card.specialTrainingSkillId == 0)
+            throw std::invalid_argument("Card has no before/after training skills: " + std::to_string(card.id));
+        if (cfg.skillAfterTraining.value() && userCard0.specialTrainingStatus != Enums::SpecialTrainingStatus::done)
+            throw std::invalid_argument("After training skill requires a trained card: " + std::to_string(card.id));
+    }
     auto units = this->cardService.getCardUnits(card);
     uint16_t unitMask = 0;
     for (const auto unit : units)
         unitMask |= uint16_t{1} << unit;
-    auto skill = this->skillCalculator.getCardSkill(userCard0, card, scoreUpLimit);
+    auto skill = this->skillCalculator.getCardSkill(userCard0, card, scoreUpLimit, cfg.skillAfterTraining);
     std::vector<DeckCardPowerDetail> multiUnitPower;
     auto power = this->powerCalculator.getCardPower(
         userCard0, card, units, userAreaItemLevels, hasCanvasBonus, userGateBonuses,
@@ -130,8 +136,11 @@ std::optional<CardDetail> CardCalculator::getCardDetail(
         .episode1Read = episode1Read,
         .episode2Read = episode2Read,
         .afterTraining = afterTraining,
-        .defaultImage = userCard.defaultImage,
-        .multiUnitPower = std::move(multiUnitPower)
+        .defaultImage = cfg.skillAfterTraining.has_value()
+            ? (cfg.skillAfterTraining.value() ? Enums::DefaultImage::special_training : Enums::DefaultImage::original)
+            : userCard.defaultImage,
+        .multiUnitPower = std::move(multiUnitPower),
+        .skillAfterTraining = cfg.skillAfterTraining,
     };
 }
 

@@ -374,6 +374,7 @@ struct PySingleCardConfig {
     std::optional<bool> canvas;
     std::optional<int> master_rank;
     std::optional<int> skill_level;
+    std::optional<std::string> skill_form;
 
 #ifdef SEKAI_DECK_RECOMMEND_PYTHON
     py::dict to_dict() const {
@@ -385,6 +386,7 @@ struct PySingleCardConfig {
         if (canvas.has_value())         result["canvas"] = canvas.value();
         if (master_rank.has_value())    result["master_rank"] = master_rank.value();
         if (skill_level.has_value())    result["skill_level"] = skill_level.value();
+        if (skill_form.has_value())     result["skill_form"] = skill_form.value();
         return result;
     }
     static PySingleCardConfig from_dict(const py::dict& dict) {
@@ -396,6 +398,7 @@ struct PySingleCardConfig {
         if (dict.contains("canvas"))         config.canvas = dict["canvas"].cast<bool>();
         if (dict.contains("master_rank"))    config.master_rank = dict["master_rank"].cast<int>();
         if (dict.contains("skill_level"))    config.skill_level = dict["skill_level"].cast<int>();
+        if (dict.contains("skill_form"))     config.skill_form = dict["skill_form"].cast<std::string>();
         return config;
     }
 #endif
@@ -1408,6 +1411,12 @@ class SekaiDeckRecommend {
                         cfg.masterRank = card_config.master_rank.value();
                     if (card_config.skill_level.has_value())
                         cfg.skillLevel = card_config.skill_level.value();
+                    if (card_config.skill_form.has_value()) {
+                        const auto& form = card_config.skill_form.value();
+                        if (form != "before_training" && form != "after_training")
+                            throw std::invalid_argument("Invalid card skill form: " + form);
+                        cfg.skillAfterTraining = form == "after_training";
+                    }
                     config.singleCardConfig[card_config.card_id] = cfg;
                 }
             }
@@ -1806,7 +1815,8 @@ PYBIND11_MODULE(sekai_deck_recommend, m) {
         .def_readwrite("episode_read", &PySingleCardConfig::episode_read)
         .def_readwrite("canvas", &PySingleCardConfig::canvas)
         .def_readwrite("master_rank", &PySingleCardConfig::master_rank)
-        .def_readwrite("skill_level", &PySingleCardConfig::skill_level);
+        .def_readwrite("skill_level", &PySingleCardConfig::skill_level)
+        .def_readwrite("skill_form", &PySingleCardConfig::skill_form);
 
     py::class_<PyGaOptions>(m, "DeckRecommendGaOptions")
         .def(py::init<>())
@@ -2003,6 +2013,7 @@ PySingleCardConfig singleCardConfigFromJson(const json& data) {
     readOptional(data, "canvas", config.canvas);
     readOptional(data, "master_rank", config.master_rank);
     readOptional(data, "skill_level", config.skill_level);
+    readOptional(data, "skill_form", config.skill_form);
     return config;
 }
 
