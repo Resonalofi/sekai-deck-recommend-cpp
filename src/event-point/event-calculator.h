@@ -21,8 +21,8 @@ public:
         dataProvider(dataProvider),
         cardEventCalculator(dataProvider),
         liveCalculator(dataProvider),
-        // JP raised this cap in 6.5.0; other regions may share JP master data.
-        multiLiveTeammateScoreBonusLimit(dataProvider.region == Region::JP
+        // JP/EN publish this cap in configs; Nuverse keeps the original cap.
+        multiLiveTeammateScoreBonusLimit(dataProvider.region == Region::JP || dataProvider.region == Region::EN
             ? dataProvider.masterData->eventScoreCeiling / 340000 : 13) {}
 
     /**
