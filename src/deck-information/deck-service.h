@@ -141,6 +141,9 @@ public:
      */
     UserChallengeLiveSoloDeck getChallengeLiveSoloDeck(int characterId);
 
+    // 根据上传角色等级获取挑战卡位：1/13/18/22级解锁2/3/4/5张。
+    int getChallengeLiveMemberCount(int characterId) const;
+
     /**
      * 获取用户挑战Live卡组中的卡牌
      * @param deck 挑战Live卡组

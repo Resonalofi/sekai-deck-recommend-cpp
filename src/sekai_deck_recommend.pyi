@@ -121,7 +121,7 @@ class DeckRecommendOptions:
         live_type (str): Live type in ["multi", "solo", "auto", "challenge", "challenge_auto", "mysekai"]
         music_id (int): Music ID
         music_diff (str): Music difficulty in ["easy", "normal", "hard", "expert", "master", "append"]
-        event_id (int): Event ID, leave it None to use no-event or unit-attr-specificed recommendation
+        event_id (int): Event ID. With no event selectors, the score target optimizes live score; real and simulated events optimize event PT.
         event_me_unit (str): Memory-event simulation: all attributes +25%, native unit characters +75% total before master-rank bonuses. Marathon only, mutually exclusive with other event selectors.
         event_attr (str): Attribute of unit-attr-specificed recommendation, only available when event_id is None. In ["mysterious", "cute", "cool", "pure", "happy"]
         event_unit (str): Unit of unit-attr-specificed recommendation, only available when event_id is None. In ["light_sound", "idol", "street", "theme_park", "school_refusal", "piapro"]
@@ -131,7 +131,7 @@ class DeckRecommendOptions:
         world_bloom_character_id (int): World bloom character ID, only required when event is world bloom
         challenge_live_character_id (int): Challenge live character ID, only required when live is challenge live
         limit (int): Limit of returned decks, default is 10. No guarantee to return this number of decks if not enough cards
-        member (int): Number of members in the deck, default is 5
+        member (int): Number of members. If omitted, challenge live uses uploaded character ranks 1/13/18/22 to select 2/3/4/5 cards; other lives use 5. An explicit value takes precedence.
         timeout_ms (int): Timeout in milliseconds, default is None
         rarity_1_config (DeckRecommendCardConfig): Card config for rarity 1
         rarity_2_config (DeckRecommendCardConfig): Card config for rarity 2
@@ -296,8 +296,8 @@ class RecommendDeck:
     """
     Deck recommendation result
     Attributes:
-        score (int): event point or challenge score of the deck
-        live_score (int): Live score of the deck
+        score (int): Event PT, or live score for challenge and no-event score targets
+        live_score (int): Live score of the deck, independent of recommendation target
         mysekai_event_point (int): event point of the deck obtained in mysekai
         total_power (int): Total power of the deck
         base_power (int): Base power of the deck
@@ -416,7 +416,8 @@ class SekaiDeckRecommend:
                     "events": "...",
                 }
             region (str): Region in ["jp", "en", "tw", "kr", "cn"]
-            shared_region (Optional[str]): Loaded region whose common master data can be reused
+            shared_region (Optional[str]): Loaded region whose common master data can be reused.
+                Supply honors for the requested region.
         """
         ...
 

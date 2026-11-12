@@ -20,6 +20,7 @@ using MasterDataStrings = std::map<std::string, std::string_view>;
 
 extern const std::vector<std::string> requiredMasterDataKeys;
 extern const std::vector<std::string> notRequiredMasterDataKeys;
+extern const std::vector<std::string> regionalMasterDataKeys;
 
 struct MasterDataCore {
     std::vector<AreaItemLevel> areaItemLevels;
@@ -128,7 +129,7 @@ public:
 
     void loadFromStrings(MasterDataStrings& data);
 
-    void loadHonorsFromStrings(MasterDataStrings& data);
+    void loadRegionalDataFromStrings(MasterDataStrings& data);
 
     Honor* findHonorById(int honorId);
 

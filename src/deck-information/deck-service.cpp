@@ -52,6 +52,15 @@ UserChallengeLiveSoloDeck DeckService::getChallengeLiveSoloDeck(int characterId)
     }, [&]() { return "User challenge live solo deck not found for characterId=" + std::to_string(characterId); });
 }
 
+int DeckService::getChallengeLiveMemberCount(int characterId) const
+{
+    const auto& character = findOrThrow(dataProvider.userData->userCharacters,
+        [characterId](const UserCharacter& row) { return row.characterId == characterId; });
+    // 各服统一：角色等级1/13/18/22分别解锁2/3/4/5张挑战卡位。
+    const int rank = character.characterRank;
+    return 1 + (rank >= 1) + (rank >= 13) + (rank >= 18) + (rank >= 22);
+}
+
 std::vector<UserCard> DeckService::getChallengeLiveSoloDeckCards(const UserChallengeLiveSoloDeck &deck)
 {
     std::vector<int> cardIds = {deck.leader, deck.support1, deck.support2, deck.support3, deck.support4};

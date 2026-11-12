@@ -1206,7 +1206,9 @@ class SekaiDeckRecommend {
                     throw std::invalid_argument("Invalid member count: " + std::to_string(config.member));
             }
             else {
-                config.member = 5;
+                config.member = is_challenge_live
+                    ? DeckService(options.dataProvider).getChallengeLiveMemberCount(options.challengeLiveCharacterId)
+                    : 5;
             }
 
             // fixed cards
@@ -1634,7 +1636,7 @@ public:
             if (!region_masterdata.count(shared_region_enum))
                 throw std::invalid_argument("Master data not found for shared region: " + shared_region.value());
             masterdata = std::make_shared<MasterData>(region_masterdata.at(shared_region_enum)->sharedCore());
-            masterdata->loadHonorsFromStrings(data);
+            masterdata->loadRegionalDataFromStrings(data);
         }
         else {
             masterdata = std::make_shared<MasterData>();
@@ -2325,6 +2327,10 @@ const std::vector<std::string>& requiredMasterdataKeys() {
 
 const std::vector<std::string>& optionalMasterdataKeys() {
     return notRequiredMasterDataKeys;
+}
+
+const std::vector<std::string>& regionalMasterdataKeys() {
+    return regionalMasterDataKeys;
 }
 
 }

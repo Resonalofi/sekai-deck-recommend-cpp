@@ -249,6 +249,9 @@ const std::vector<std::string> notRequiredMasterDataKeys = {
     "mysekaiGates",
     "mysekaiGateLevels"
 };
+const std::vector<std::string> regionalMasterDataKeys = {
+    "honors"
+};
 
 
 void loadMasterDataJsonFromFile(std::map<std::string, json>& jsons, const std::string& baseDir, const std::string& key) {
@@ -453,7 +456,7 @@ std::vector<T> loadMasterDataFromString(
     return result;
 }
 
-void MasterData::loadHonorsFromStrings(MasterDataStrings& data) {
+void MasterData::loadRegionalDataFromStrings(MasterDataStrings& data) {
     this->baseDir.clear();
     this->honors = loadMasterDataFromString<Honor>(data, "honors");
     rebuildHonorIndex();
@@ -558,8 +561,7 @@ void MasterData::loadFromStrings(MasterDataStrings& data) {
     this->eventRarityBonusRates = loadMasterDataFromString<EventRarityBonusRate>(data, "eventRarityBonusRates");
     this->gameCharacters = loadMasterDataFromString<GameCharacter>(data, "gameCharacters");
     this->gameCharacterUnits = loadMasterDataFromString<GameCharacterUnit>(data, "gameCharacterUnits");
-    this->honors = loadMasterDataFromString<Honor>(data, "honors");
-    rebuildHonorIndex();
+    loadRegionalDataFromStrings(data);
     this->masterLessons = loadMasterDataFromString<MasterLesson>(data, "masterLessons");
     this->musicDifficulties = loadMasterDataFromString<MusicDifficulty>(data, "musicDifficulties");
     this->musics = loadMasterDataFromString<Music>(data, "musics");

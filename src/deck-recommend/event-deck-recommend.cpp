@@ -17,8 +17,18 @@ RecommendResult EventDeckRecommend::recommendEventDeck(int eventId, int liveType
     // 全当期：把本活动的当期卡视为已拥有
     if (cfg.ownAllBonusCards)
         baseRecommend.addEventBonusCardsToPool(eventId, userCards, cfg);
+    const bool noEvent =
+        eventId == dataProvider.masterData->getNoEventFakeEventId(Enums::EventType::marathon) ||
+        eventId == dataProvider.masterData->getNoEventFakeEventId(Enums::EventType::cheerful);
+    LiveCalculator liveCalculator(dataProvider);
     return baseRecommend.recommendHighScoreDeck(userCards,
-        this->eventCalculator.getEventPointFunction(
+        noEvent && cfg.target == RecommendTarget::Score ? liveCalculator.getLiveScoreFunction(
+            liveType,
+            cfg.liveSkillOrder,
+            cfg.specificSkillOrder,
+            cfg.multiTeammateScoreUp,
+            cfg.multiTeammatePower
+        ) : this->eventCalculator.getEventPointFunction(
             liveType,
             eventConfig.eventType,
             cfg.liveSkillOrder,

@@ -41,5 +41,7 @@ private:
 void initializeDataPath(const std::string& path);
 const std::vector<std::string>& requiredMasterdataKeys();
 const std::vector<std::string>& optionalMasterdataKeys();
+// Tables loaded separately for each region even when the common master is shared.
+const std::vector<std::string>& regionalMasterdataKeys();
 
 }

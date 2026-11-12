@@ -21,7 +21,7 @@ public:
 
     /**
      * 推荐活动用的卡牌
-     * 根据活动PT高低推荐
+     * 分数目标：有活动时按活动PT，无活动时按歌曲得分推荐
      * @param eventId 活动ID
      * @param liveType Live类型
      * @param config 推荐设置
